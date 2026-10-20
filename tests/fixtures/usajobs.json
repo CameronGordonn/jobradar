@@ -1,0 +1,21 @@
+{"SearchResult": {"SearchResultCount": 2, "SearchResultCountAll": 2, "SearchResultItems": [
+ {"MatchedObjectId": "111", "MatchedObjectDescriptor": {
+   "PositionID": "NOAA-26-001", "PositionTitle": "Physical Scientist (Remote Sensing)",
+   "PositionURI": "https://www.usajobs.gov/job/111", "PositionLocationDisplay": "San Diego, California",
+   "PositionLocation": [{"LocationName": "San Diego, California"}],
+   "OrganizationName": "NOAA Fisheries", "DepartmentName": "Department of Commerce",
+   "QualificationSummary": "Bachelor's degree in physical science, math, or engineering. Python and satellite imagery analysis.",
+   "PositionRemuneration": [{"MinimumRange": "61111", "MaximumRange": "99000", "RateIntervalCode": "PA"}],
+   "PublicationStartDate": "2026-09-20", "ApplicationCloseDate": "2026-10-10",
+   "UserArea": {"Details": {"JobSummary": "Develop computer vision and machine learning methods for satellite and aerial imagery of coastal ecosystems.",
+     "MajorDuties": ["Build image segmentation models", "Process geospatial raster data"],
+     "HiringPath": ["public", "graduates"], "LowGrade": "7", "HighGrade": "9"}}}},
+ {"MatchedObjectId": "222", "MatchedObjectDescriptor": {
+   "PositionID": "DOE-26-777", "PositionTitle": "Supervisory Data Scientist",
+   "PositionURI": "https://www.usajobs.gov/job/222", "PositionLocationDisplay": "Washington, District of Columbia",
+   "PositionLocation": [{"LocationName": "Washington, District of Columbia"}],
+   "OrganizationName": "Office of the CIO", "DepartmentName": "Department of Energy",
+   "QualificationSummary": "Requires 10 years of specialized experience.",
+   "UserArea": {"Details": {"JobSummary": "Lead analytics team.", "MajorDuties": "Supervise staff.",
+     "HiringPath": ["fed-internal-search"], "LowGrade": "14", "HighGrade": "15"}}}}
+]}}

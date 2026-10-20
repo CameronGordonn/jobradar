@@ -1,0 +1,15 @@
+{"jobs": [
+ {"id": "b1", "title": "Computer Vision Engineer", "location": "San Francisco, CA", "secondaryLocations": [],
+  "isRemote": false, "isListed": true, "jobUrl": "https://jobs.ashbyhq.com/gridco/b1", "publishedAt": "2026-09-25T00:00:00Z",
+  "address": {"postalAddress": {"addressRegion": "California", "addressCountry": "United States"}},
+  "descriptionHtml": "<p>Detect grid assets in aerial imagery.</p>", "descriptionPlain": "Detect grid assets in aerial imagery."},
+ {"id": "b2", "title": "Software Engineer", "location": "Remote", "secondaryLocations": [],
+  "isRemote": true, "isListed": true, "jobUrl": "https://jobs.ashbyhq.com/gridco/b2", "publishedAt": "2026-09-25T00:00:00Z",
+  "address": {"postalAddress": {"addressCountry": "United States"}},
+  "descriptionPlain": "Build grid software."},
+ {"id": "b3", "title": "Engineer", "location": "Berlin", "secondaryLocations": [{"location": "Munich"}],
+  "isRemote": true, "isListed": true, "jobUrl": "https://jobs.ashbyhq.com/gridco/b3",
+  "address": {"postalAddress": {"addressCountry": "Germany"}},
+  "descriptionPlain": "EU role."},
+ {"id": "b4", "title": "Hidden", "location": "San Diego, CA", "isListed": false, "jobUrl": "", "descriptionPlain": "unlisted"}
+]}

@@ -1,0 +1,104 @@
+# Paths are relative to this file.
+db_path: data/jobradar.db
+rubric_path: rubric.md
+
+# One entry per resume variant. Paste plain text versions of your resumes into these files.
+resumes:
+  geospatial_cv: resumes/geospatial_cv.txt
+  data_science: resumes/data_science.txt
+  software_eng: resumes/software_eng.txt
+
+sources:
+  usajobs:
+    enabled: true
+    # Each keyword x location pair is one query. Keep the list focused; volume grows fast.
+    keywords:
+      - machine learning
+      - data scientist
+      - computer vision
+      - remote sensing
+      - geospatial
+      - operations research
+      - mathematical statistician
+      - energy
+    locations:
+      - California
+      - null            # no location: catches remote postings; location filter below trims the rest
+    date_posted_days: 14  # API max is 60
+    # Codes: https://data.usajobs.gov/api/codelist/hiringpaths
+    # "public" = open to all US citizens, "graduates" = Pathways Recent Graduates
+    allowed_hiring_paths: [public, graduates]
+    max_low_grade: 9      # GS-7 is typical for a BS with a 3.0+ GPA; GS-9 usually wants an MS or a year of experience
+
+  greenhouse:
+    enabled: true
+    # token = the slug in boards.greenhouse.io/<token>. Check each with:
+    #   python -m jobradar.cli probe-greenhouse <token>
+    # Entries starting with REPLACE are skipped.
+    boards:
+      # Computer vision, robotics, autonomy
+      - {token: samsara, name: "Samsara"}
+      - {token: gomotive, name: "Motive"}
+      - {token: nuro, name: "Nuro"}
+      - {token: figureai, name: "Figure AI"}
+      - {token: carbonrobotics, name: "Carbon Robotics"}
+      # Geospatial, remote sensing, weather, energy
+      - {token: planetlabs, name: "Planet Labs"}
+      - {token: overstory, name: "Overstory"}
+      - {token: tomorrow, name: "Tomorrow.io"}
+      - {token: fervoenergy, name: "Fervo Energy"}
+      # Sports analytics
+      - {token: hudl, name: "Hudl"}
+      - {token: geniussports, name: "Genius Sports"}
+      # General ML / data
+      - {token: anthropic, name: "Anthropic"}
+      - {token: databricks, name: "Databricks"}
+      - {token: flexport, name: "Flexport"}
+
+  # token = the name in jobs.lever.co/<token>. Check with: python -m jobradar.cli probe lever <token>
+  lever:
+    enabled: true
+    boards:
+      - {token: voltus, name: "Voltus"}            # demand response / grid flexibility
+      - {token: arcadia, name: "Arcadia"}          # utility data, community solar
+
+  # token = the name in jobs.ashbyhq.com/<token>. Check with: python -m jobradar.cli probe ashby <token>
+  ashby:
+    enabled: true
+    boards:
+      - {token: formenergy, name: "Form Energy"}     # grid batteries
+      - {token: span, name: "SPAN"}                  # smart electrical panels
+      - {token: leap, name: "Leap"}                  # distributed energy / VPP
+      - {token: aurorasolar, name: "Aurora Solar"}   # solar design software, aerial imagery
+      - {token: crusoe, name: "Crusoe"}              # energy-first AI cloud
+      - {token: watershed, name: "Watershed"}        # carbon accounting
+      - {token: mapbox, name: "Mapbox"}              # maps / geospatial
+      - {token: teamworks, name: "Teamworks"}        # sports tech
+
+filters:
+  # Matched as whole words, case-insensitive. Only the title is checked.
+  exclude_title: [senior, sr, staff, principal, director, manager, head, vp, "vice president", lead, intern, internship]
+  # Whole-word match against location. "United States" keeps Greenhouse remote-US postings.
+  location_allow: [CA, California, "San Diego", Remote, Anywhere, "United States", USA]
+  # Whole-word. Drops "Remote - Canada" style postings unless a concrete US location (not just Remote) is also listed.
+  location_block: [Canada, Toronto, Vancouver, Mexico, "United Kingdom", UK, London, Ireland, Dublin, Europe, EU, EMEA,
+                   Germany, Berlin, Munich, France, Paris, Netherlands, Amsterdam, Spain, Poland, India, Bangalore,
+                   Singapore, Japan, Tokyo, Korea, Seoul, Australia, Sydney, Brazil, LATAM, APAC, Israel]
+  # Plain substring match against the description.
+  exclude_text: ["ts/sci", "top secret", "polygraph", "active secret clearance"]
+  # Drops a job only if the SMALLEST years-of-experience number in the posting exceeds this.
+  max_years_required: 3
+
+recall:
+  backend: tfidf        # or "embeddings" (pip install sentence-transformers)
+  top_k: 40             # max Claude calls per run
+  min_recall: 0.0
+
+rerank:
+  model: claude-haiku-4-5-20251001   # try claude-sonnet-5-5 on your labeled set and compare AUC
+  max_desc_chars: 8000
+
+digest:
+  top_n: 10
+  min_fit: 6
+  out_dir: digests

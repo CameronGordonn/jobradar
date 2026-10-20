@@ -1,0 +1,16 @@
+[
+ {"id": "a1", "text": "Machine Learning Engineer, Solar Forecasting", "hostedUrl": "https://jobs.lever.co/sunco/a1",
+  "categories": {"location": "San Diego, CA", "team": "ML", "commitment": "Full-time", "allLocations": ["San Diego, CA"]},
+  "country": "US", "workplaceType": "hybrid", "createdAt": 1790000000000,
+  "descriptionPlain": "Build computer vision models on satellite imagery to forecast solar output.",
+  "lists": [{"text": "Requirements", "content": "<li>1+ years of experience with PyTorch</li><li>BS in math or CS</li>"}],
+  "additionalPlain": "We are a climate company."},
+ {"id": "a2", "text": "Data Scientist", "hostedUrl": "https://jobs.lever.co/sunco/a2",
+  "categories": {"location": "", "team": "Data", "allLocations": []},
+  "country": "US", "workplaceType": "remote", "createdAt": 1790000000000,
+  "descriptionPlain": "Forecast grid demand.", "lists": [], "additionalPlain": ""},
+ {"id": "a3", "text": "Data Scientist", "hostedUrl": "https://jobs.lever.co/sunco/a3",
+  "categories": {"location": "", "team": "Data", "allLocations": []},
+  "country": "GB", "workplaceType": "remote", "createdAt": 1790000000000,
+  "descriptionPlain": "Forecast UK grid demand.", "lists": [], "additionalPlain": ""}
+]

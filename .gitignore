@@ -1,0 +1,10 @@
+data/
+digests/
+resumes/*.txt
+.env
+__pycache__/
+.venv/
+rubric.md
+resumes/*
+!resumes/.gitkeep
+.pytest_cache/

@@ -1,0 +1,14 @@
+{"jobs": [
+ {"id": 1, "title": "Machine Learning Engineer, Computer Vision", "absolute_url": "https://boards.greenhouse.io/solarco/jobs/1",
+  "location": {"name": "San Diego, CA"}, "updated_at": "2026-09-25T00:00:00Z", "departments": [{"name": "ML"}],
+  "content": "&lt;p&gt;Build &lt;strong&gt;computer vision&lt;/strong&gt; models to detect rooftop solar panels.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;1+ years of experience with PyTorch&lt;/li&gt;&lt;li&gt;Geospatial imagery a plus&lt;/li&gt;&lt;/ul&gt;"},
+ {"id": 2, "title": "Senior Staff Software Engineer", "absolute_url": "https://boards.greenhouse.io/solarco/jobs/2",
+  "location": {"name": "San Diego, CA"}, "updated_at": "2026-09-25T00:00:00Z", "departments": [],
+  "content": "&lt;p&gt;8+ years of experience building distributed systems.&lt;/p&gt;"},
+ {"id": 3, "title": "Data Scientist", "absolute_url": "https://boards.greenhouse.io/solarco/jobs/3",
+  "location": {"name": "Austin, TX"}, "updated_at": "2026-09-25T00:00:00Z", "departments": [],
+  "content": "&lt;p&gt;Forecast energy demand.&lt;/p&gt;"},
+ {"id": 4, "title": "Data Analyst, Grid Operations", "absolute_url": "https://boards.greenhouse.io/solarco/jobs/4",
+  "location": {"name": "Remote - United States"}, "updated_at": "2026-09-25T00:00:00Z", "departments": [],
+  "content": "&lt;p&gt;SQL dashboards for utility grid operations. 5+ years of relevant experience preferred, or 2 years with a quantitative degree.&lt;/p&gt;"}
+]}
