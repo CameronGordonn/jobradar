@@ -207,12 +207,14 @@ def score_batch(client, lab: DB, model: str, run: int, items: list[dict], system
         by_id = {f"r{i}": r for i, r in enumerate(items)}
         reqs = [{"custom_id": cid, "params": rerank.request_params(model, system, tool, item_job(r), max_chars)}
                 for cid, r in by_id.items()]
-        batch = client.messages.batches.create(requests=reqs)
-        batch_id = batch.id
-        lab.execute("INSERT INTO eval_batches VALUES (?,?,?,?,?,NULL)", (batch_id, model, run, len(reqs), utcnow()))
         lab.execute("CREATE TABLE IF NOT EXISTS eval_batch_items "
                     "(batch_id VARCHAR, custom_id VARCHAR, job_key VARCHAR)")
+        batch = client.messages.batches.create(requests=reqs)
+        batch_id = batch.id
+        lab.execute("BEGIN")  # the batch and its id map land together, or a resume can't read the results
+        lab.execute("INSERT INTO eval_batches VALUES (?,?,?,?,?,NULL)", (batch_id, model, run, len(reqs), utcnow()))
         lab.insert_rows("eval_batch_items", [(batch_id, cid, r["job_key"]) for cid, r in by_id.items()])
+        lab.execute("COMMIT")
         log.info("submitted batch %s with %d requests", batch_id, len(reqs))
     lab.close()  # don't hold the labels file's write lock while waiting; labeling can go on
     try:

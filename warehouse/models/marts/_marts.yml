@@ -76,13 +76,16 @@ unit_tests:
     given:
       - input: ref('int_jobs')
         rows:
-          - {job_id: "greenhouse:1", source: greenhouse, company: A, role_family: other, is_open: false,
+          - {job_id: "greenhouse:1", source: greenhouse, company: A, role_family: other, is_open: false, board_active: true,
              posted_at: "2026-09-01 00:00:00", posted_date: "2026-09-01", ingested_at: "2026-09-21 09:00:00",
              first_ingested_at: "2026-09-10 09:00:00"}
-          - {job_id: "greenhouse:2", source: greenhouse, company: A, role_family: other, is_open: true,
+          - {job_id: "greenhouse:2", source: greenhouse, company: A, role_family: other, is_open: true, board_active: true,
              posted_at: "2026-09-01 00:00:00", posted_date: "2026-09-01", ingested_at: "2026-09-21 09:00:00",
              first_ingested_at: "2026-09-10 09:00:00"}
-          - {job_id: "usajobs:3", source: usajobs, company: B, role_family: other, is_open: false,
+          - {job_id: "greenhouse:4", source: greenhouse, company: C, role_family: other, is_open: false, board_active: false,
+             posted_at: "2026-08-01 00:00:00", posted_date: "2026-08-01", ingested_at: "2026-08-20 09:00:00",
+             first_ingested_at: "2026-08-10 09:00:00"}
+          - {job_id: "usajobs:3", source: usajobs, company: B, role_family: other, is_open: false, board_active: true,
              posted_at: "2026-09-01 00:00:00", posted_date: "2026-09-01", ingested_at: "2026-09-05 09:00:00",
              first_ingested_at: "2026-09-02 09:00:00"}
     expect:

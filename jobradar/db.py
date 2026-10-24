@@ -130,9 +130,19 @@ class DB:
             self.con.execute(f"INSERT INTO {table} VALUES " + ",".join([ph] * len(part)),
                              [v for r in part for v in r])
 
-    def reopen(self) -> None:
-        """Reconnect after close(), e.g. after releasing the write lock during a long wait."""
-        self.con = duckdb.connect(self.path)
+    def reopen(self, wait_seconds: int = 1800) -> None:
+        """Reconnect after close(). Another process (a labeling session) may hold the write
+        lock, so keep trying for a while before giving up."""
+        import time
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            try:
+                self.con = duckdb.connect(self.path)
+                return
+            except duckdb.IOException:
+                if time.monotonic() > deadline:
+                    raise RuntimeError(f"{self.path} stayed locked by another process; rerun to resume") from None
+                time.sleep(10)
 
     def commit(self) -> None:
         """DuckDB autocommits each statement; kept so callers read like before."""

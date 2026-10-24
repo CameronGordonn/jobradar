@@ -17,11 +17,14 @@ family as (
 ),
 
 latest_load as (
-    -- A board posting is open while it keeps showing up in that board's latest load.
+    -- A board posting is open while it keeps showing up in that board's latest load, and the
+    -- board itself is still being loaded: a board dropped from sources.yaml, or one that 404s
+    -- for good, stops loading, and its postings would otherwise stay open forever.
     select
         source,
         board,
-        max(ingested_at) as last_load
+        max(ingested_at) as last_load,
+        max(ingested_at) >= max(max(ingested_at)) over (partition by source) - interval 3 day as board_active
     from jobs
     group by 1, 2
 ),
@@ -62,10 +65,11 @@ select
     {{ annualize('j.salary_max', 'j.salary_interval') }} as salary_max_annual,
     j.first_ingested_at,
     j.ingested_at,
+    l.board_active,
     case
         -- USAJOBS searches only return recent announcements, so use the closing date instead.
         when j.source = 'usajobs' then coalesce(j.closes_at::date >= current_date, j.ingested_at = l.last_load)
-        else j.ingested_at = l.last_load
+        else j.ingested_at = l.last_load and l.board_active
     end as is_open,
     md5(lower(trim(j.company)) || '|' || j.title_norm || '|' || lower(coalesce(j.location, ''))) as exact_key,
     -- Near-duplicate cluster when the embedding dedupe has run, else exact company + title + location.

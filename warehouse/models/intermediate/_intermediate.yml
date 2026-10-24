@@ -49,6 +49,9 @@ unit_tests:
           - {job_id: "greenhouse:c", source: greenhouse, source_job_id: c, board: solarco, company: SolarCo,
              title: "Mechanical Engineer", location: "Denver, CO", workplace_type: onsite,
              first_ingested_at: "2026-10-01 00:00:00", ingested_at: "2026-10-03 00:00:00"}
+          - {job_id: "greenhouse:e", source: greenhouse, source_job_id: e, board: oldboard, company: Gone,
+             title: "Data Scientist", location: "Denver, CO",
+             first_ingested_at: "2026-09-01 00:00:00", ingested_at: "2026-09-01 00:00:00"}
           - {job_id: "usajobs:d", source: usajobs, source_job_id: d, board: "q|", company: "Example Survey",
              title: "Office Clerk", location: "Reston, Virginia", closes_at: "2099-01-01 00:00:00",
              first_ingested_at: "2026-09-01 00:00:00", ingested_at: "2026-09-01 00:00:00"}
@@ -56,6 +59,7 @@ unit_tests:
         rows:
           - {priority: 1, role_family: geospatial_earth, pattern: '\b(gis|geospatial)\b'}
           - {priority: 2, role_family: machine_learning, pattern: '\b(machine learning)\b'}
+          - {priority: 3, role_family: data_science, pattern: '\b(data scien\w*)\b'}
           - {priority: 8, role_family: hardware_robotics, pattern: '\b(mechanical)\b'}
           - {priority: 9, role_family: software_engineering, pattern: '\b(engineer)\b'}
       - input: source('jobradar', 'job_clusters')
@@ -72,5 +76,7 @@ unit_tests:
            role_family: geospatial_earth, is_remote: false, salary_min_annual: 80000, posted_date: "2026-10-03", is_open: false}
         - {job_id: "greenhouse:c", company: SolarCo, title_clean: "Mechanical Engineer", title_norm: "mechanical engineer",
            role_family: hardware_robotics, is_remote: false, salary_min_annual: null, posted_date: "2026-10-01", is_open: true}
+        - {job_id: "greenhouse:e", company: Gone, title_clean: "Data Scientist", title_norm: "data scientist",
+           role_family: data_science, is_remote: false, salary_min_annual: null, posted_date: "2026-09-01", is_open: false}
         - {job_id: "usajobs:d", company: "Example Survey", title_clean: "Office Clerk", title_norm: "office clerk",
            role_family: other, is_remote: false, salary_min_annual: null, posted_date: "2026-09-01", is_open: true}
