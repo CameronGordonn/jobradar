@@ -225,7 +225,9 @@ def _show(item: dict, full: bool, out) -> None:
         out(f"Grade: GS-{e.get('low_grade')} to GS-{e.get('high_grade')} | "
             f"Hiring paths: {', '.join(e.get('hiring_paths') or [])}")
     out("-" * 80)
-    desc = item["description"] or ""
+    # Tidy for the screen only: "-" bullets split from their text, and runs of blank lines.
+    desc = re.sub(r"(?m)^-\s*\n\s*", "- ", item["description"] or "")
+    desc = re.sub(r"\n{3,}", "\n\n", re.sub(r"\n\s*\n(?=- )", "\n", desc))
     out(desc if full else excerpt(desc))
 
 
