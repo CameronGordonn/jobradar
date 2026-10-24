@@ -6,8 +6,8 @@ Verify with:  python -m jobradar.cli probe lever <site>
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import requests
 
@@ -43,7 +43,7 @@ def parse_job(j: dict, site: str, display_name: str | None) -> Job:
         location=_location(j),
         url=j.get("hostedUrl", ""),
         description="\n\n".join(p.strip() for p in parts if p and p.strip()),
-        posted=datetime.fromtimestamp(created / 1000, timezone.utc).isoformat() if created else None,
+        posted=datetime.fromtimestamp(created / 1000, UTC).isoformat() if created else None,
         extra={"country": j.get("country") or None,
                "team": (j.get("categories") or {}).get("team"),
                "commitment": (j.get("categories") or {}).get("commitment"),

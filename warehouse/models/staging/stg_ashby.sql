@@ -9,7 +9,7 @@ pay as (
         max((c ->> 'maxValue')::double) as salary_max,
         any_value(c ->> 'currencyCode') as salary_currency,
         any_value(c ->> 'interval') as ashby_interval
-    from src, unnest(from_json(payload -> 'compensation' -> 'summaryComponents', '["json"]')) as t(c)
+    from src, unnest(from_json(payload -> 'compensation' -> 'summaryComponents', '["json"]')) as t (c)
     where c ->> 'compensationType' = 'Salary'
     group by 1
 )
@@ -21,9 +21,13 @@ select
     src.board,
     coalesce(src.board_name, src.board) as company,
     src.payload ->> 'title' as title,
-    concat_ws('; ', nullif(src.payload ->> 'location', ''),
-              nullif(array_to_string(list_transform(from_json(src.payload -> 'secondaryLocations', '["json"]'),
-                                                    lambda x: x ->> 'location'), '; '), '')) as location,
+    concat_ws(
+        '; ', nullif(src.payload ->> 'location', ''),
+        nullif(array_to_string(list_transform(
+            from_json(src.payload -> 'secondaryLocations', '["json"]'),
+            lambda x: x ->> 'location'  -- noqa: RF02
+        ), '; '), '')
+    ) as location,
     src.payload ->> 'jobUrl' as url,
     src.payload ->> 'department' as department,
     src.payload ->> 'employmentType' as employment_type,

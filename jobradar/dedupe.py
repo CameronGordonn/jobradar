@@ -26,7 +26,8 @@ FIELDS = ["pair_id", "sim", "bin", "weight", "job_a", "job_b", "company", "title
 
 def load_jobs(con: DB, open_only: bool = True) -> list[dict]:
     where = "WHERE is_open" if open_only else ""
-    return con.query(f"""SELECT job_id, company, title_clean AS title, coalesce(location, '') AS location, url, exact_key
+    return con.query(f"""SELECT job_id, company, title_clean AS title, coalesce(location, '') AS location,
+                                url, exact_key
                          FROM intermediate.int_jobs {where} ORDER BY job_id""")
 
 
@@ -52,13 +53,14 @@ def company_pairs(jobs: list[dict], E: np.ndarray, low: float) -> list[tuple[int
         S = E[idx] @ E[idx].T
         a, b = np.triu_indices(len(idx), 1)
         keep = S[a, b] >= low
-        for x, y, s in zip(idx[a[keep]], idx[b[keep]], S[a, b][keep]):
+        for x, y, s in zip(idx[a[keep]], idx[b[keep]], S[a, b][keep], strict=True):
             if jobs[x]["exact_key"] != jobs[y]["exact_key"]:
                 out.append((int(x), int(y), float(s)))
     return out
 
 
-def sample_candidates(jobs, pairs, seed: int = 50, low: float = LOW, bins: int = BINS, per: int = PER_BIN) -> list[dict]:
+def sample_candidates(jobs, pairs, seed: int = 50, low: float = LOW, bins: int = BINS,
+                      per: int = PER_BIN) -> list[dict]:
     rng = random.Random(seed)
     width = (1.0 - low) / bins
     binned = defaultdict(list)

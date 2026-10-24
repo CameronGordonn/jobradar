@@ -8,18 +8,19 @@ from __future__ import annotations
 
 import json
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "tests/fixtures/warehouse/runs.json"
 CHANGES = OUT.with_name("changes.json")
 RUNS = 8
-TODAY = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)  # posted dates are relative to this
+TODAY = datetime(2026, 10, 1, 12, tzinfo=UTC)  # posted dates are relative to this
 
 TITLES = ["Machine Learning Engineer", "ML Engineer", "Data Scientist", "Senior Data Scientist",
           "Data Engineer", "Analytics Engineer", "Software Engineer, Backend", "Backend Software Engineer",
           "Geospatial Analyst", "Remote Sensing Scientist", "Product Manager", "Account Executive",
-          "Operations Research Analyst", "Hydrologist", "Mathematical Statistician", "Research Scientist, Computer Vision"]
+          "Operations Research Analyst", "Hydrologist", "Mathematical Statistician",
+          "Research Scientist, Computer Vision"]
 PLACES = ["San Diego, CA", "Remote (US)", "Denver, CO", "Austin, TX", "Boston, MA", "Remote"]
 
 BOARDS = {
@@ -59,7 +60,8 @@ def greenhouse_job(p, token):
 def lever_job(p, site):
     job = {"id": f"lv-{p['i']}", "text": p["title"], "hostedUrl": f"https://example.com/{site}/{p['i']}",
            "createdAt": int((TODAY - timedelta(days=p["posted_days_ago"])).timestamp() * 1000),
-           "categories": {"location": p["place"], "allLocations": [p["place"]], "team": "Data", "commitment": "Full-time"},
+           "categories": {"location": p["place"], "allLocations": [p["place"]], "team": "Data",
+                          "commitment": "Full-time"},
            "workplaceType": "remote" if "Remote" in p["place"] else "onsite", "country": "US",
            "descriptionPlain": "Synthetic posting."}
     if p["salary"]:
@@ -93,7 +95,8 @@ def usajobs_item(p):
         "PositionRemuneration": [{"MinimumRange": str(lo), "MaximumRange": str(hi), "RateIntervalCode": "PA"}],
         "QualificationSummary": "Synthetic.",
         "UserArea": {"Details": {"JobSummary": "Synthetic posting.", "HiringPath": ["public"], "LowGrade": "7",
-                                 "HighGrade": "9", "RemoteIndicator": "Remote" in p["place"], "TeleworkEligible": True}}}}
+                                 "HighGrade": "9", "RemoteIndicator": "Remote" in p["place"],
+                                 "TeleworkEligible": True}}}}
 
 
 def main():

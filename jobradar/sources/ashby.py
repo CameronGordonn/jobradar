@@ -6,7 +6,7 @@ Verify with:  python -m jobradar.cli probe ashby <name>
 from __future__ import annotations
 
 import logging
-from typing import Iterator
+from collections.abc import Iterator
 
 import requests
 

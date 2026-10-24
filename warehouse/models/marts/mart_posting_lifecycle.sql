@@ -11,6 +11,7 @@ select
     ingested_at::date as last_seen_date,
     datediff('day', posted_date, ingested_at::date) as days_listed
 from {{ ref('int_jobs') }}
-where source != 'usajobs'
-  and not is_open
-  and posted_at is not null
+where
+    source != 'usajobs'
+    and not is_open
+    and posted_at is not null

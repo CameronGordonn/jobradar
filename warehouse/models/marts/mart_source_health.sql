@@ -10,5 +10,5 @@ select
     q.ratio,
     coalesce(q.flagged, false) as flagged,
     q.reason
-from {{ source('jobradar', 'ingest_runs') }} r
-left join {{ source('jobradar', 'quality_checks') }} q using (run_id, source)
+from {{ source('jobradar', 'ingest_runs') }} as r
+left join {{ source('jobradar', 'quality_checks') }} as q using (run_id, source)

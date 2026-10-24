@@ -56,9 +56,11 @@ def build_tool(variants: list[str]) -> dict:
                 "gaps": {"type": "array", "items": {"type": "string"},
                     "description": "Stated requirements the resume does not show evidence for."},
                 "dealbreakers": {"type": "array", "items": {"type": "string"},
-                    "description": "Hard requirements clearly not met (degree, clearance, years, citizenship, sector)."},
+                    "description": "Hard requirements clearly not met "
+                                   "(degree, clearance, years, citizenship, sector)."},
                 "pitch": {"type": "string",
-                    "description": "1-2 sentences the candidate could open an application note with. Specific, no hype."},
+                    "description": "1-2 sentences the candidate could open an application note with. "
+                                   "Specific, no hype."},
             },
             "required": ["fit_score", "recommend", "resume_variant", "strongest_evidence",
                          "gaps", "dealbreakers", "pitch"],

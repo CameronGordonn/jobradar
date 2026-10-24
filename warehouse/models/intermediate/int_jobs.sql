@@ -8,20 +8,29 @@ with jobs as (
 ),
 
 family as (
-    select j.job_id, r.role_family
-    from jobs j
-    join {{ ref('role_families') }} r on regexp_matches(j.title_norm, r.pattern)
+    select
+        j.job_id,
+        r.role_family
+    from jobs as j
+    inner join {{ ref('role_families') }} as r on regexp_matches(j.title_norm, r.pattern)
     qualify row_number() over (partition by j.job_id order by r.priority) = 1
 ),
 
 latest_load as (
     -- A board posting is open while it keeps showing up in that board's latest load.
-    select source, board, max(ingested_at) as last_load
-    from jobs group by 1, 2
+    select
+        source,
+        board,
+        max(ingested_at) as last_load
+    from jobs
+    group by 1, 2
 ),
 
 clusters as (
-    select job_id, cluster_id from {{ source('jobradar', 'job_clusters') }}
+    select
+        job_id,
+        cluster_id
+    from {{ source('jobradar', 'job_clusters') }}
 )
 
 select
@@ -39,8 +48,8 @@ select
     j.employment_type,
     j.workplace_type,
     coalesce(j.remote_flag, false)
-        or coalesce(j.workplace_type = 'remote', false)
-        or regexp_matches(lower(coalesce(j.location, '')), '\bremote\b') as is_remote,
+    or coalesce(j.workplace_type = 'remote', false)
+    or regexp_matches(lower(coalesce(j.location, '')), '\bremote\b') as is_remote,
     coalesce(f.role_family, 'other') as role_family,
     j.posted_at,
     coalesce(j.posted_at, j.first_ingested_at)::date as posted_date,
@@ -60,9 +69,11 @@ select
     end as is_open,
     md5(lower(trim(j.company)) || '|' || j.title_norm || '|' || lower(coalesce(j.location, ''))) as exact_key,
     -- Near-duplicate cluster when the embedding dedupe has run, else exact company + title + location.
-    coalesce(c.cluster_id,
-             md5(lower(trim(j.company)) || '|' || j.title_norm || '|' || lower(coalesce(j.location, '')))) as cluster_id
-from jobs j
-left join family f using (job_id)
-left join latest_load l on l.source = j.source and l.board is not distinct from j.board
-left join clusters c using (job_id)
+    coalesce(
+        c.cluster_id,
+        md5(lower(trim(j.company)) || '|' || j.title_norm || '|' || lower(coalesce(j.location, '')))
+    ) as cluster_id
+from jobs as j
+left join family as f using (job_id)
+left join latest_load as l on j.source = l.source and l.board is not distinct from j.board
+left join clusters as c using (job_id)

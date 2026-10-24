@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 
 import yaml
@@ -52,7 +52,7 @@ def export(con: DB, sources_path: Path) -> dict:
                   WHERE salary_currency = 'USD' AND salary_min_annual IS NOT NULL
                   GROUP BY 1 HAVING COUNT(*) >= 10 ORDER BY 3 DESC""")
     return {
-        "generated_at": utcnow().replace(tzinfo=timezone.utc).isoformat(timespec="minutes"),
+        "generated_at": utcnow().replace(tzinfo=UTC).isoformat(timespec="minutes"),
         "scope": {"usajobs_queries": len(us.get("keywords", [])) * len(us.get("locations", [None])),
                   "usajobs_keywords": us.get("keywords", []), "boards": boards,
                   "board_count": sum(boards.values())},

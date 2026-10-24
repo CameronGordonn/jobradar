@@ -21,8 +21,10 @@ select
     count(*) as versions,
     count(*) filter (where version > 1 and prev_title is distinct from title_clean) as title_changes,
     count(*) filter (where version > 1 and prev_location is distinct from location) as location_changes,
-    count(*) filter (where version > 1 and (prev_salary_min is distinct from salary_min_annual
-                                            or prev_salary_max is distinct from salary_max_annual)) as salary_changes,
+    count(*) filter (where version > 1 and (
+        prev_salary_min is distinct from salary_min_annual
+        or prev_salary_max is distinct from salary_max_annual
+    )) as salary_changes,
     count(*) filter (where version > 1 and prev_workplace is distinct from workplace_type) as workplace_changes,
     count(*) filter (where version > 1 and prev_open and not is_open) as closures,
     count(*) filter (where version > 1 and not prev_open and is_open) as reopenings,

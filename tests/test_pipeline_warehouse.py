@@ -1,8 +1,8 @@
 from datetime import timedelta
+from pathlib import Path
 
 import numpy as np
 import pytest
-from pathlib import Path
 
 from jobradar import db, pipeline
 
@@ -66,8 +66,8 @@ def fake_jobs():
     rows = [("a1", "Acme", "Machine Learning Engineer", "SF"), ("a2", "Acme", "ML Engineer", "SF"),
             ("a3", "Acme", "Accountant", "SF"), ("a4", "Acme", "Accountant", "SF"),
             ("b1", "Beta", "ML Engineer", "SF")]
-    return [{"job_id": j, "company": c, "title": t, "location": l, "url": "u", "exact_key": f"{c}|{t}|{l}"}
-            for j, c, t, l in rows]
+    return [{"job_id": j, "company": c, "title": t, "location": loc, "url": "u", "exact_key": f"{c}|{t}|{loc}"}
+            for j, c, t, loc in rows]
 
 
 def fake_embed(jobs):

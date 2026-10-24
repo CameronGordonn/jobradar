@@ -9,7 +9,7 @@ pay as (
         min((r ->> 'min_cents')::double) / 100 as salary_min,
         max((r ->> 'max_cents')::double) / 100 as salary_max,
         bool_or(r ->> 'title' ilike '%hour%') as hourly
-    from src, unnest(from_json(payload -> 'pay_input_ranges', '["json"]')) as t(r)
+    from src, unnest(from_json(payload -> 'pay_input_ranges', '["json"]')) as t (r)
     where r ->> 'currency_type' = 'USD'
     group by 1
 )

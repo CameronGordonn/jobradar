@@ -8,12 +8,17 @@ bounds as (
     -- Run times are UTC and current_date follows the session time zone, so end at whichever is later.
     select
         greatest(min(posted_date), current_date - 365) as first_day,
-        greatest(current_date, (select max(started_at)::date from {{ source('jobradar', 'ingest_runs') }})) as last_day
+        greatest(
+            current_date,
+            (select max(ir.started_at)::date from {{ source('jobradar', 'ingest_runs') }} as ir)
+        ) as last_day
     from jobs
 ),
 
 days as (
-    select unnest(generate_series((select first_day from bounds), (select last_day from bounds), interval 1 day))::date as day
+    select
+        unnest(generate_series((select first_day from bounds), (select last_day from bounds), interval 1 day))::date
+            as day
 ),
 
 sources as (
@@ -21,13 +26,22 @@ sources as (
 ),
 
 new_postings as (
-    select posted_date as day, source, count(*) as new_postings, count(distinct cluster_id) as new_postings_deduped
-    from jobs group by 1, 2
+    select
+        posted_date as day,
+        source,
+        count(*) as new_postings,
+        count(distinct cluster_id) as new_postings_deduped
+    from jobs
+    group by 1, 2
 ),
 
 runs as (
-    select started_at::date as day, source, arg_max(rows_fetched, started_at) as postings_in_feed
-    from {{ source('jobradar', 'ingest_runs') }} group by 1, 2
+    select
+        started_at::date as day,
+        source,
+        arg_max(rows_fetched, started_at) as postings_in_feed
+    from {{ source('jobradar', 'ingest_runs') }}
+    group by 1, 2
 )
 
 select
@@ -37,7 +51,7 @@ select
     coalesce(n.new_postings, 0) as new_postings,
     coalesce(n.new_postings_deduped, 0) as new_postings_deduped,
     r.postings_in_feed
-from days d
-cross join sources s
-left join new_postings n on n.day = d.day and n.source = s.source
-left join runs r on r.day = d.day and r.source = s.source
+from days as d
+cross join sources as s
+left join new_postings as n on d.day = n.day and s.source = n.source
+left join runs as r on d.day = r.day and s.source = r.source

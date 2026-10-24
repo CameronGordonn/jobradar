@@ -1,15 +1,14 @@
 import itertools
 import json
 from datetime import datetime
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
-from jobradar import db, evaluation as ev, labeling, report
-from jobradar.models import Job
 from test_labeling import make_main
+
+from jobradar import db, labeling, report
+from jobradar import evaluation as ev
 
 SYSTEM = [{"type": "text", "text": "rubric and resumes"}]
 TOOL = {"name": "record_fit", "input_schema": {"type": "object"}}
@@ -130,7 +129,7 @@ def test_estimate_uses_measured_output(world):
 def test_reuse_production_scores_only_after_prompt_change(world):
     main, lab = world
     keys = [r["job_key"] for r in ev.items_for_run(lab, 1)[:3]]
-    for k, when in zip(keys, ["2026-10-01T00:00:00+00:00", "2026-10-22T00:00:00+00:00", "2026-10-22T00:00:00+00:00"]):
+    for k, when in zip(keys, ["2026-10-01T00:00:00+00:00", "2026-10-22T00:00:00+00:00", "2026-10-22T00:00:00+00:00"], strict=True):
         main.execute("INSERT INTO scores VALUES (?,?,?,?,?,?,?,?,?,?)",
                      (k, 8, "apply", "v", "e", "[]", "[]", "p", "claude-haiku-4-5-20251001", when))
     n = ev.reuse_production_scores(lab, main, "claude-haiku-4-5-20251001", datetime(2026, 10, 20))

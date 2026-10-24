@@ -1,0 +1,23 @@
+[sqlfluff]
+dialect = duckdb
+templater = jinja
+max_line_length = 120
+# Excluded: blank-line and column-order layout rules that fight the existing style; domain column names
+# like source and day (references.keywords); USING joins (structure.using); select * in union by name.
+exclude_rules = layout.cte_newline, structure.column_order, references.keywords, structure.using, ambiguous.column_count
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = True
+load_macros_from_path = macros
+
+[sqlfluff:indentation]
+tab_space_size = 4
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower

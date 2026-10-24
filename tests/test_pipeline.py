@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
 from jobradar import cli, db, filters, labeling
 from jobradar.models import Job

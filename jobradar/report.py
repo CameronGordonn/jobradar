@@ -6,7 +6,7 @@ alongside a label goes to data/eval_details.md, which is gitignored.
 from __future__ import annotations
 
 import json
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 
 import numpy as np
@@ -105,8 +105,8 @@ def stability(lab: DB) -> dict:
             continue
         f1, f2 = [r["f1"] for r in rows], [r["f2"] for r in rows]
         out[m] = {"n": len(rows), "spearman": ev.spearman(f1, f2),
-                  "exact_fit_match": float(np.mean([a == b for a, b in zip(f1, f2)])),
-                  "within_1": float(np.mean([abs(a - b) <= 1 for a, b in zip(f1, f2)])),
+                  "exact_fit_match": float(np.mean([a == b for a, b in zip(f1, f2, strict=True)])),
+                  "within_1": float(np.mean([abs(a - b) <= 1 for a, b in zip(f1, f2, strict=True)])),
                   "recommend_match": float(np.mean([r["r1"] == r["r2"] for r in rows]))}
     return out
 
@@ -171,8 +171,9 @@ def self_agreement(lab: DB) -> dict:
     a, c = [r["la"] for r in rows], [r["lc"] for r in rows]
     bin_a, bin_c = [x == "apply" for x in a], [x == "apply" for x in c]
     return {"status": "ok", "n": len(rows),
-            "agreement_3class": float(np.mean([x == y for x, y in zip(a, c)])), "kappa_3class": ev.cohen_kappa(a, c),
-            "agreement_apply": float(np.mean([x == y for x, y in zip(bin_a, bin_c)])),
+            "agreement_3class": float(np.mean([x == y for x, y in zip(a, c, strict=True)])),
+            "kappa_3class": ev.cohen_kappa(a, c),
+            "agreement_apply": float(np.mean([x == y for x, y in zip(bin_a, bin_c, strict=True)])),
             "kappa_apply": ev.cohen_kappa([str(x) for x in bin_a], [str(x) for x in bin_c])}
 
 
@@ -247,7 +248,8 @@ def figure(res: dict, path: Path) -> bool:
     ax.set_ylim(0, 1)
     ax.set_xlabel("k (top-ranked labeled postings)", color=INK_2)
     ax.set_ylabel("precision@k", color=INK_2)
-    ax.set_title(f"Precision@k on {res['n']} hand-labeled postings, 95% bootstrap bands", color=INK, loc="left", fontsize=11)
+    ax.set_title(f"Precision@k on {res['n']} hand-labeled postings, 95% bootstrap bands",
+                 color=INK, loc="left", fontsize=11)
     ax.grid(axis="y", color=GRID, lw=1)
     for s in ("top", "right"):
         ax.spines[s].set_visible(False)
@@ -306,7 +308,7 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
     sp = spend(lab)
     fig_ok = figure(results["apply"], out_dir / "precision_at_k.png")
 
-    metrics = {"generated_at": utcnow().replace(tzinfo=timezone.utc).isoformat(), "command": COMMAND,
+    metrics = {"generated_at": utcnow().replace(tzinfo=UTC).isoformat(), "command": COMMAND,
                "snapshot": {k: (str(v) if k == "created_at" else v) for k, v in snap.items()},
                "label_counts": {k: {"items": n, "labeled": d} for k, (n, d) in counts.items()},
                "comparison": results, "production_cost": costs, "stability": stab, "stage0_audit": s0,
@@ -342,12 +344,15 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
     if any(costs.values()):
         L += [f"One daily run sends the top {top_k} postings by recall to Claude, one call each, at standard "
               "prices. Computed from token counts measured on the eval calls.", "",
-              "| Model | Calls measured | Mean input tokens | Mean output tokens | System prompt caches? | USD per run |",
+              "| Model | Calls measured | Mean input tokens | Mean output tokens | System prompt caches? "
+              "| USD per run |",
               "|---|---|---|---|---|---|"]
         for m, c in costs.items():
             if c:
-                L.append(f"| {m} | {c['calls_measured']} | {c['mean_input_tokens']:.0f} | {c['mean_output_tokens']:.0f} | "
-                         f"{'yes' if c['system_caches'] else 'no'} ({c['system_tokens']} tokens, minimum {c['min_cacheable']}) | "
+                caches = f"{'yes' if c['system_caches'] else 'no'} ({c['system_tokens']} tokens, " \
+                         f"minimum {c['min_cacheable']})"
+                L.append(f"| {m} | {c['calls_measured']} | {c['mean_input_tokens']:.0f} | "
+                         f"{c['mean_output_tokens']:.0f} | {caches} | "
                          f"${c['usd_per_run']:.3f} |")
     else:
         L.append("Pending: no Claude calls measured yet.")
@@ -355,7 +360,8 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
           "The rerank is pointwise (one posting per call), so stability is measured by scoring the same "
           f"{ev.STABILITY_N} postings twice per model.", ""]
     if stab:
-        L += ["| Model | n | Spearman (fit) | Exact fit match | Within 1 point | Same recommendation |", "|---|---|---|---|---|---|"]
+        L += ["| Model | n | Spearman (fit) | Exact fit match | Within 1 point | Same recommendation |",
+              "|---|---|---|---|---|---|"]
         for m, s in stab.items():
             L.append(f"| {m} | {s['n']} | {s['spearman']:.3f} | {s['exact_fit_match']:.0%} | {s['within_1']:.0%} | "
                      f"{s['recommend_match']:.0%} |")
@@ -363,7 +369,8 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
         L.append("Pending: second scoring run not done yet.")
     L += ["", "## Stage 0 audit (filter false negatives)", ""]
     if s0["labeled"]:
-        L += [f"{s0['labeled']} of {s0['sampled']} filtered postings labeled: {s0['apply']} apply, {s0['maybe']} maybe.",
+        L += [f"{s0['labeled']} of {s0['sampled']} filtered postings labeled: "
+              f"{s0['apply']} apply, {s0['maybe']} maybe.",
               "", "| Rule | Sampled | Labeled | Apply | Maybe |", "|---|---|---|---|---|"]
         for f, d in sorted(s0["by_rule"].items()):
             L.append(f"| {f} | {d['sampled']} | {d['labeled']} | {d.get('apply', 0)} | {d.get('maybe', 0)} |")
@@ -393,7 +400,8 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
             L.append(f"| {_name(a)} vs {_name(b)} | {rho:.3f} |")
         if ag["claude_apply_below_cutoff"]:
             L += ["", f"Postings each Claude model recommends \"apply\" that a recall ranker puts below its top "
-                  f"{ag['top_k']} across the whole pool of {ag['pool']} (in a single batch they would never reach Claude):", "",
+                  f"{ag['top_k']} across the whole pool of {ag['pool']} "
+                  "(in a single batch they would never reach Claude):", "",
                   "| Model | Scored | Apply | Below TF-IDF top-k | Below bge-small top-k | Below MiniLM top-k |",
                   "|---|---|---|---|---|---|"]
             for m, c in ag["claude_apply_below_cutoff"].items():

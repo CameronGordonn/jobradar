@@ -210,7 +210,8 @@ def score_batch(client, lab: DB, model: str, run: int, items: list[dict], system
         batch = client.messages.batches.create(requests=reqs)
         batch_id = batch.id
         lab.execute("INSERT INTO eval_batches VALUES (?,?,?,?,?,NULL)", (batch_id, model, run, len(reqs), utcnow()))
-        lab.execute("CREATE TABLE IF NOT EXISTS eval_batch_items (batch_id VARCHAR, custom_id VARCHAR, job_key VARCHAR)")
+        lab.execute("CREATE TABLE IF NOT EXISTS eval_batch_items "
+                    "(batch_id VARCHAR, custom_id VARCHAR, job_key VARCHAR)")
         lab.insert_rows("eval_batch_items", [(batch_id, cid, r["job_key"]) for cid, r in by_id.items()])
         log.info("submitted batch %s with %d requests", batch_id, len(reqs))
     lab.close()  # don't hold the labels file's write lock while waiting; labeling can go on
@@ -235,7 +236,8 @@ def score_batch(client, lab: DB, model: str, run: int, items: list[dict], system
             _save(lab, model, run, key, rerank.parse_result(msg, key), usage, cost, "batch")
             done += 1
         except Exception as e:
-            lab.execute("INSERT INTO eval_failures VALUES (?,?,?,?,?,?)", (model, run, key, str(e)[:500], cost, utcnow()))
+            lab.execute("INSERT INTO eval_failures VALUES (?,?,?,?,?,?)",
+                        (model, run, key, str(e)[:500], cost, utcnow()))
     lab.execute("UPDATE eval_batches SET ended_at=? WHERE batch_id=?", (utcnow(), batch_id))
     return done
 
@@ -261,7 +263,8 @@ def embed_pool(lab: DB, resumes: list[str], name: str, encode=None) -> int:
     v = np.asarray(encode(resumes))
     scores = (j @ v.T).max(axis=1)
     lab.execute("DELETE FROM ranker_scores WHERE ranker=?", (f"emb:{name}",))
-    lab.insert_rows("ranker_scores", [(f"emb:{name}", r["job_key"], float(s), utcnow()) for r, s in zip(texts, scores)])
+    lab.insert_rows("ranker_scores", [(f"emb:{name}", r["job_key"], float(s), utcnow())
+                                      for r, s in zip(texts, scores, strict=True)])
     return len(texts)
 
 

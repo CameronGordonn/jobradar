@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -92,12 +92,12 @@ _JOB_COLS = ("key", "source", "source_id", "title", "org", "location", "url", "d
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def utcnow() -> datetime:
     """Naive UTC, for TIMESTAMP columns."""
-    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    return datetime.now(UTC).replace(tzinfo=None, microsecond=0)
 
 
 class DB:
@@ -107,14 +107,14 @@ class DB:
         self.path = str(path)
         self.con = duckdb.connect(self.path, read_only=read_only)
 
-    def execute(self, sql: str, params=()) -> "DB":
+    def execute(self, sql: str, params=()) -> DB:
         self.con.execute(sql, params)
         return self
 
     def query(self, sql: str, params=()) -> list[dict]:
         cur = self.con.execute(sql, params)
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, r)) for r in cur.fetchall()]
+        return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
 
     def scalar(self, sql: str, params=()):
         r = self.con.execute(sql, params).fetchone()

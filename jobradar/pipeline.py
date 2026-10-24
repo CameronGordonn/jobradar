@@ -15,9 +15,9 @@ import logging
 import statistics
 import sys
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable
 
 import yaml
 
@@ -152,7 +152,7 @@ def load_fixture_runs(con: DB, path: Path) -> int:
         at = now - timedelta(days=run["days_ago"])
         resp = run["responses"]
 
-        def fetcher(name):
+        def fetcher(name, resp=resp):  # bind this run's responses, not the loop variable
             def f(cfg):
                 if name == "usajobs":
                     for item in resp.get("usajobs", []):

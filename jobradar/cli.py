@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import UTC
 from pathlib import Path
 
 import yaml
@@ -60,7 +61,7 @@ def _update_recall(cfg, con):
     jobs = [row_to_job(r) for r in rows]
     scores = recall.score([j.text() for j in jobs], list(cfg["resume_texts"].values()),
                           cfg.get("recall", {}).get("backend", "tfidf"))
-    db.set_recall(con, [(r["key"], float(s)) for s, r in zip(scores, rows)])
+    db.set_recall(con, [(r["key"], float(s)) for s, r in zip(scores, rows, strict=True)])
 
 
 def _client_and_prompt(cfg):
@@ -160,8 +161,8 @@ def cmd_eval(cfg, con, args, client=None):
         m = report.build(cfg, evaluation.init(labeling.connect(cfg["labels_db_path"])), con,
                          Path(cfg["_base"]) / "results", Path(cfg["_base"]) / "data" / "eval_details.md",
                          n_boot=args.n_boot)
-        print(f"Wrote results/eval_summary.md, results/eval_metrics.json"
-              f"{', results/precision_at_k.png' if (Path(cfg['_base']) / 'results/precision_at_k.png').exists() else ''}; "
+        fig = ", results/precision_at_k.png" if (Path(cfg["_base"]) / "results/precision_at_k.png").exists() else ""
+        print(f"Wrote results/eval_summary.md, results/eval_metrics.json{fig}; "
               f"private details in data/eval_details.md. Eval spend so far ${m['api_spend']['total_usd']:.2f}.")
         return
 
@@ -186,7 +187,7 @@ def cmd_eval(cfg, con, args, client=None):
               con.query("SELECT j.source, j.source_id, s.fit FROM scores s JOIN jobs j USING (key)")}
     ids = {r["job_key"]: (r["source"], r["source_id"]) for r in
            lab.query("SELECT job_key, source, source_id FROM label_items WHERE set_name='a'")}
-    scored = [(t, scores[ids[r["job_key"]]]) for t, r in zip(y, a) if ids.get(r["job_key"]) in scores]
+    scored = [(t, scores[ids[r["job_key"]]]) for t, r in zip(y, a, strict=True) if ids.get(r["job_key"]) in scores]
     if len({t for t, _ in scored}) == 2:
         print(f"Rerank fit-score AUC (cached scores only, n={len(scored)}): "
               f"{roc_auc_score([t for t, _ in scored], [f for _, f in scored]):.3f}")
@@ -196,10 +197,10 @@ def cmd_eval(cfg, con, args, client=None):
 
 def _prompt_changed_at(cfg):
     """Last change to anything in the system prompt: the rubric or a resume."""
-    from datetime import datetime, timezone
+    from datetime import datetime
     base = cfg["_base"]
     paths = [base / cfg["rubric_path"]] + [base / v for v in cfg["resumes"].values()]
-    return datetime.fromtimestamp(max(p.stat().st_mtime for p in paths), timezone.utc).replace(tzinfo=None)
+    return datetime.fromtimestamp(max(p.stat().st_mtime for p in paths), UTC).replace(tzinfo=None)
 
 
 def cmd_eval_embed(cfg, con, args):
@@ -247,7 +248,8 @@ def cmd_eval_score(cfg, con, args):
         print("Nothing spent. Add --yes to run it.")
         return
     if spent + cost > budget and not args.over_budget:
-        print(f"Refusing: ${spent:.2f} spent + ${cost:.2f} would pass the ${budget:.2f} budget (--over-budget to allow).")
+        print(f"Refusing: ${spent:.2f} spent + ${cost:.2f} would pass the ${budget:.2f} budget "
+              "(--over-budget to allow).")
         return
     fn = evaluation.score_sync if args.sync else evaluation.score_batch
     done = fn(client, lab, model, run, items, system, tool, max_chars)
@@ -307,7 +309,8 @@ def main(argv=None):
     con = None if args.cmd in ("label", "label-status", "eval-embed", "eval-score") else db.connect(cfg["db_path"])
     {"ingest": cmd_ingest, "score": cmd_score, "digest": cmd_digest, "run": cmd_run,
      "label": cmd_label, "label-sample": cmd_label_sample, "label-status": cmd_label_status,
-     "eval": cmd_eval, "eval-embed": cmd_eval_embed, "eval-score": cmd_eval_score, "probe": cmd_probe, "probe-greenhouse": cmd_probe}[args.cmd](cfg, con, args)
+     "eval": cmd_eval, "eval-embed": cmd_eval_embed, "eval-score": cmd_eval_score,
+     "probe": cmd_probe, "probe-greenhouse": cmd_probe}[args.cmd](cfg, con, args)
 
 
 if __name__ == "__main__":

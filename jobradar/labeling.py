@@ -143,7 +143,7 @@ def _write_sets(lab: DB, rng: random.Random, snap: str, seed: int, backend: str,
 
     # a: 20 per recall decile
     bins = defaultdict(list)
-    for r, d in zip(passing, deciles([r["recall"] for r in passing])):
+    for r, d in zip(passing, deciles([r["recall"] for r in passing]), strict=True):
         bins[d].append(r)
     per = SET_A // 10
     set_a = [(r, f"decile_{d:02d}", len(bins[d]) / per) for d in sorted(bins) for r in rng.sample(bins[d], per)]
@@ -167,7 +167,7 @@ def _write_sets(lab: DB, rng: random.Random, snap: str, seed: int, backend: str,
     def rows(name, items, numbers):
         return [(name, n, snap, r["key"], r["source"], r["source_id"], r["title"], r["org"], r["location"],
                  r["url"], r["description"], r["extra"], r["filter_reason"], r["recall"], stratum, weight)
-                for (r, stratum, weight), n in zip(items, numbers)]
+                for (r, stratum, weight), n in zip(items, numbers, strict=True)]
 
     lab.insert_rows("label_items", rows("a", set_a, order[:len(set_a)])
                     + rows("b", set_b, order[len(set_a):]) + rows("c", set_c, c_order))
