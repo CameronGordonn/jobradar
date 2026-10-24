@@ -29,15 +29,19 @@ One daily run sends the top 40 postings by recall to Claude, one call each, at s
 
 | Model | Calls measured | Mean input tokens | Mean output tokens | System prompt caches? | USD per run |
 |---|---|---|---|---|---|
-| claude-haiku-4-5-20251001 | 2 | 7358 | 304 | yes (5118 tokens, minimum 4096) | $0.177 |
-| claude-haiku-5-5 | 2 | 10212 | 1390 | yes (7237 tokens, minimum 512) | $0.043 |
-| claude-sonnet-5-5 | 2 | 10212 | 631 | yes (7237 tokens, minimum 512) | $0.565 |
+| claude-haiku-4-5-20251001 | 221 | 7382 | 350 | yes (5118 tokens, minimum 4096) | $0.187 |
+| claude-haiku-5-5 | 250 | 10005 | 1283 | yes (7237 tokens, minimum 512) | $0.040 |
+| claude-sonnet-5-5 | 250 | 10005 | 652 | yes (7237 tokens, minimum 512) | $0.557 |
 
 ## LLM stability
 
 The rerank is pointwise (one posting per call), so stability is measured by scoring the same 50 postings twice per model.
 
-Pending: second scoring run not done yet.
+| Model | n | Spearman (fit) | Exact fit match | Within 1 point | Same recommendation |
+|---|---|---|---|---|---|
+| claude-haiku-4-5-20251001 | 47 | 0.873 | 68% | 96% | 94% |
+| claude-haiku-5-5 | 50 | 0.840 | 58% | 100% | 94% |
+| claude-sonnet-5-5 | 50 | 0.983 | 94% | 100% | 98% |
 
 ## Stage 0 audit (filter false negatives)
 
@@ -47,13 +51,45 @@ Pending: set b not labeled yet.
 
 Pending: no apply labels in set a yet.
 
+## Ranker agreement (no labels needed)
+
+Spearman correlation of the scores each ranker gives the same 200 set a postings:
+
+| Rankers | Spearman |
+|---|---|
+| TF-IDF (current stage 1) vs Embeddings, bge-small-en-v1.5 | 0.596 |
+| TF-IDF (current stage 1) vs Embeddings, all-MiniLM-L6-v2 | 0.431 |
+| TF-IDF (current stage 1) vs Claude Haiku 4.5 rerank | 0.479 |
+| TF-IDF (current stage 1) vs Claude Sonnet 5.5 rerank | 0.272 |
+| TF-IDF (current stage 1) vs Claude Haiku 5.5 rerank | 0.401 |
+| Embeddings, bge-small-en-v1.5 vs Embeddings, all-MiniLM-L6-v2 | 0.698 |
+| Embeddings, bge-small-en-v1.5 vs Claude Haiku 4.5 rerank | 0.439 |
+| Embeddings, bge-small-en-v1.5 vs Claude Sonnet 5.5 rerank | 0.172 |
+| Embeddings, bge-small-en-v1.5 vs Claude Haiku 5.5 rerank | 0.434 |
+| Embeddings, all-MiniLM-L6-v2 vs Claude Haiku 4.5 rerank | 0.363 |
+| Embeddings, all-MiniLM-L6-v2 vs Claude Sonnet 5.5 rerank | 0.167 |
+| Embeddings, all-MiniLM-L6-v2 vs Claude Haiku 5.5 rerank | 0.320 |
+| Claude Haiku 4.5 rerank vs Claude Sonnet 5.5 rerank | 0.735 |
+| Claude Haiku 4.5 rerank vs Claude Haiku 5.5 rerank | 0.731 |
+| Claude Sonnet 5.5 rerank vs Claude Haiku 5.5 rerank | 0.721 |
+
+Postings each Claude model recommends "apply" that a recall ranker puts below its top 40 across the whole pool of 551 (in a single batch they would never reach Claude):
+
+| Model | Scored | Apply | Below TF-IDF top-k | Below bge-small top-k | Below MiniLM top-k |
+|---|---|---|---|---|---|
+| claude-haiku-4-5-20251001 | 200 | 5 | 3 | 5 | 3 |
+| claude-haiku-5-5 | 200 | 2 | 1 | 2 | 2 |
+| claude-sonnet-5-5 | 200 | 1 | 0 | 1 | 1 |
+
+This compares rankers with each other, not with the labels: it shows how much the recall stage and the reranker disagree, not which one is right.
+
 ## Self-agreement ceiling
 
 Pending: 0/40 of set c relabeled; set c opens 7 days after set a is fully labeled.
 
 ## API spend
 
-Total spent on eval calls: $0.06; claude-haiku-4-5-20251001 $0.01; claude-haiku-5-5 $0.00; claude-sonnet-5-5 $0.04.
+Total spent on eval calls: $2.30; claude-haiku-4-5-20251001 $0.59; claude-haiku-5-5 $0.12; claude-sonnet-5-5 $1.59.
 
 ## Reproduce
 
