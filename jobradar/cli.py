@@ -4,6 +4,7 @@ import argparse
 import logging
 import random
 import sys
+import uuid
 from pathlib import Path
 
 import yaml
@@ -13,8 +14,11 @@ from .db import row_to_job
 from .sources import ashby, greenhouse, lever, usajobs
 
 log = logging.getLogger("jobradar")
-SOURCES = {"usajobs": usajobs.fetch, "greenhouse": greenhouse.fetch,
-           "lever": lever.fetch, "ashby": ashby.fetch}
+# Raw fetchers yield (board, board name, payload); parsers turn a payload into a Job.
+SOURCES = {"usajobs": usajobs.fetch_raw, "greenhouse": greenhouse.fetch_raw,
+           "lever": lever.fetch_raw, "ashby": ashby.fetch_raw}
+PARSERS = {"usajobs": usajobs.parse, "greenhouse": greenhouse.parse,
+           "lever": lever.parse, "ashby": ashby.parse}
 BOARDS = {"greenhouse": greenhouse.fetch_board, "lever": lever.fetch_board, "ashby": ashby.fetch_board}
 
 
@@ -40,30 +44,35 @@ def load_config(path: str) -> dict:
 # ---------- stages ----------
 
 def cmd_ingest(cfg, con, args=None):
+    run_id = uuid.uuid4().hex[:12]
     new = kept = total = 0
     for name, src_cfg in cfg["sources"].items():
         if not src_cfg.get("enabled", True) or name not in SOURCES:
             continue
-        for job in SOURCES[name](src_cfg):
-            total += 1
-            reason = filters.check(job, cfg["filters"])
-            new += db.upsert_job(con, job, reason)
-            kept += reason is None
-    con.commit()
+        started = db.utcnow()
+        raw, parsed = [], []
+        for board, board_name, item in SOURCES[name](src_cfg):
+            job = PARSERS[name](item, board, board_name)
+            raw.append((job.source_id, board, board_name, item))
+            parsed.append((job, filters.check(job, cfg["filters"])))
+        new_ids = db.upsert_raw(con, name, raw, run_id)
+        new += db.upsert_jobs(con, parsed)
+        db.log_run(con, run_id, name, started, len(raw), new_ids)
+        total += len(raw)
+        kept += sum(reason is None for _, reason in parsed)
+        log.info("ingest %s: %d fetched, %d new source ids", name, len(raw), new_ids)
     log.info("ingest: %d fetched, %d new rows, %d passed filters this run", total, new, kept)
     _update_recall(cfg, con)
 
 
 def _update_recall(cfg, con):
-    rows = con.execute("SELECT * FROM jobs WHERE filter_reason IS NULL").fetchall()
+    rows = con.query("SELECT * FROM jobs WHERE filter_reason IS NULL ORDER BY key")
     if not rows:
         return
     jobs = [row_to_job(r) for r in rows]
     scores = recall.score([j.text() for j in jobs], list(cfg["resume_texts"].values()),
                           cfg.get("recall", {}).get("backend", "tfidf"))
-    con.executemany("UPDATE jobs SET recall=? WHERE key=?",
-                    [(float(s), r["key"]) for s, r in zip(scores, rows)])
-    con.commit()
+    db.set_recall(con, [(r["key"], float(s)) for s, r in zip(scores, rows)])
 
 
 def _client_and_prompt(cfg):
@@ -90,7 +99,6 @@ def _rerank_rows(cfg, con, rows, client=None):
             result = rerank.score_job(client, model, system, tool, row_to_job(r),
                                       rcfg.get("max_desc_chars", 8000))
             db.save_score(con, r["key"], result, model)
-            con.commit()
             done += 1
             log.info("scored %s | %s -> %s/10 %s", r["title"], r["org"], result["fit_score"], result["recommend"])
         except Exception as e:  # keep going; one bad posting shouldn't kill the run
@@ -108,10 +116,10 @@ def _rerank_rows(cfg, con, rows, client=None):
 def cmd_score(cfg, con, args=None, client=None):
     top_k = cfg.get("recall", {}).get("top_k", 40)
     min_recall = cfg.get("recall", {}).get("min_recall", 0.0)
-    rows = con.execute(
+    rows = con.query(
         """SELECT j.* FROM jobs j LEFT JOIN scores s ON s.key = j.key
            WHERE j.filter_reason IS NULL AND s.key IS NULL AND COALESCE(j.recall, 0) >= ?
-           ORDER BY j.recall DESC LIMIT ?""", (min_recall, top_k)).fetchall()
+           ORDER BY j.recall DESC, j.key LIMIT ?""", (min_recall, top_k))
     n = _rerank_rows(cfg, con, rows, client)
     log.info("score: reranked %d jobs", n)
 
@@ -134,10 +142,10 @@ def cmd_label(cfg, con, args):
     pipeline would never show you, not just its favorites. That's what makes
     `eval` measure the pipeline instead of flattering it."""
     where = "" if args.include_filtered else "WHERE j.filter_reason IS NULL"
-    rows = con.execute(
+    rows = con.query(
         f"""SELECT j.* FROM jobs j LEFT JOIN labels l ON l.key = j.key
             {where} {'AND' if where else 'WHERE'} l.key IS NULL
-            ORDER BY COALESCE(j.recall, 0)""").fetchall()
+            ORDER BY COALESCE(j.recall, 0)""")
     if not rows:
         print("Nothing left to label.")
         return
@@ -160,27 +168,26 @@ def cmd_label(cfg, con, args):
         if ans in ("y", "n"):
             con.execute("INSERT OR REPLACE INTO labels (key, label, labeled_at) VALUES (?,?,?)",
                         (r["key"], int(ans == "y"), db.now()))
-            con.commit()
 
 
 def cmd_eval(cfg, con, args, client=None):
     from sklearn.metrics import roc_auc_score
 
     # Filter-stage false negatives: jobs you'd apply to that stage 0 threw away.
-    fn = con.execute("""SELECT j.title, j.org, j.filter_reason FROM labels l JOIN jobs j ON j.key=l.key
-                        WHERE l.label=1 AND j.filter_reason IS NOT NULL""").fetchall()
+    fn = con.query("""SELECT j.title, j.org, j.filter_reason FROM labels l JOIN jobs j ON j.key=l.key
+                      WHERE l.label=1 AND j.filter_reason IS NOT NULL""")
 
     # Make sure every labeled, unfiltered job has a Claude score (costs one call each).
-    missing = con.execute("""SELECT j.* FROM labels l JOIN jobs j ON j.key=l.key
-                             LEFT JOIN scores s ON s.key=j.key
-                             WHERE j.filter_reason IS NULL AND s.key IS NULL""").fetchall()
+    missing = con.query("""SELECT j.* FROM labels l JOIN jobs j ON j.key=l.key
+                           LEFT JOIN scores s ON s.key=j.key
+                           WHERE j.filter_reason IS NULL AND s.key IS NULL""")
     if missing:
         log.info("eval: scoring %d labeled jobs that were never reranked", len(missing))
         _rerank_rows(cfg, con, missing, client)
 
-    rows = con.execute("""SELECT l.label, j.recall, s.fit, s.recommend FROM labels l
-                          JOIN jobs j ON j.key=l.key JOIN scores s ON s.key=j.key
-                          WHERE j.filter_reason IS NULL""").fetchall()
+    rows = con.query("""SELECT l.label, j.recall, s.fit, s.recommend FROM labels l
+                        JOIN jobs j ON j.key=l.key JOIN scores s ON s.key=j.key
+                        WHERE j.filter_reason IS NULL""")
     y = [r["label"] for r in rows]
     print(f"\nLabeled & unfiltered: {len(rows)}  (positives: {sum(y)})")
     if fn:
@@ -204,11 +211,10 @@ def cmd_eval(cfg, con, args, client=None):
     print(f"'apply' recommendation: precision {prec:.2f}, recall {rec:.2f}  (tp={tp} fp={fp} fn={fn_})")
 
     top_k = cfg.get("recall", {}).get("top_k", 40)
-    n_pass = con.execute("SELECT COUNT(*) FROM jobs WHERE filter_reason IS NULL").fetchone()[0]
+    n_pass = con.scalar("SELECT COUNT(*) FROM jobs WHERE filter_reason IS NULL")
     if n_pass:
-        cutoff = con.execute("""SELECT recall FROM jobs WHERE filter_reason IS NULL
-                                ORDER BY recall DESC LIMIT 1 OFFSET ?""",
-                             (min(top_k, n_pass) - 1,)).fetchone()[0]
+        cutoff = con.scalar("""SELECT recall FROM jobs WHERE filter_reason IS NULL
+                               ORDER BY recall DESC LIMIT 1 OFFSET ?""", (min(top_k, n_pass) - 1,))
         lost = sum(1 for r in rows if r["label"] == 1 and (r["recall"] or 0) < cutoff)
         print(f"Positives below today's top-{top_k} recall cutoff: {lost}/{sum(y)} "
               f"(these would never reach Claude in a single batch)")

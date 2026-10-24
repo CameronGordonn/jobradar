@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import date
 from pathlib import Path
 
 
-def write(con: sqlite3.Connection, cfg: dict) -> Path | None:
-    rows = con.execute(
+def write(con, cfg: dict) -> Path | None:
+    rows = con.query(
         """SELECT j.*, s.fit, s.recommend, s.variant, s.evidence, s.gaps, s.dealbreakers, s.pitch
            FROM jobs j JOIN scores s ON s.key = j.key
            LEFT JOIN digested d ON d.key = j.key
@@ -15,7 +14,7 @@ def write(con: sqlite3.Connection, cfg: dict) -> Path | None:
            ORDER BY s.fit DESC, j.recall DESC
            LIMIT ?""",
         (cfg.get("min_fit", 6), cfg.get("top_n", 10)),
-    ).fetchall()
+    )
     if not rows:
         return None
 
@@ -42,7 +41,5 @@ def write(con: sqlite3.Connection, cfg: dict) -> Path | None:
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{today}.md"
     path.write_text("\n".join(lines))
-    con.executemany("INSERT OR REPLACE INTO digested (key, digest_date) VALUES (?, ?)",
-                    [(r["key"], today) for r in rows])
-    con.commit()
+    con.insert_rows("digested", [(r["key"], today) for r in rows])
     return path

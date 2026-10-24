@@ -75,8 +75,8 @@ def cfg(tmp_path, monkeypatch):
 def patch_sources(monkeypatch):
     us = FakeSession(json.loads((FIX / "usajobs.json").read_text()))
     gh = FakeSession(json.loads((FIX / "greenhouse.json").read_text()))
-    monkeypatch.setitem(cli.SOURCES, "usajobs", lambda c: usajobs.fetch(c, us))
-    monkeypatch.setitem(cli.SOURCES, "greenhouse", lambda c: greenhouse.fetch(c, gh))
+    monkeypatch.setitem(cli.SOURCES, "usajobs", lambda c: usajobs.fetch_raw(c, us))
+    monkeypatch.setitem(cli.SOURCES, "greenhouse", lambda c: greenhouse.fetch_raw(c, gh))
     return us, gh
 
 
@@ -137,9 +137,9 @@ def test_dedupe_across_runs(cfg, monkeypatch):
     patch_sources(monkeypatch)
     con = db.connect(cfg["db_path"])
     cli.cmd_ingest(cfg, con)
-    n1 = con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    n1 = con.scalar("SELECT COUNT(*) FROM jobs")
     cli.cmd_ingest(cfg, con)
-    assert con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == n1
+    assert con.scalar("SELECT COUNT(*) FROM jobs") == n1
 
 
 def test_end_to_end(cfg, monkeypatch):
@@ -147,7 +147,7 @@ def test_end_to_end(cfg, monkeypatch):
     con = db.connect(cfg["db_path"])
     cli.cmd_ingest(cfg, con)
 
-    passing = con.execute("SELECT title, recall FROM jobs WHERE filter_reason IS NULL ORDER BY recall DESC").fetchall()
+    passing = con.query("SELECT title, recall FROM jobs WHERE filter_reason IS NULL ORDER BY recall DESC")
     assert passing[0]["title"] in ("Machine Learning Engineer, Computer Vision", "Physical Scientist (Remote Sensing)")
 
     fake = FakeClaude()
@@ -161,11 +161,10 @@ def test_end_to_end(cfg, monkeypatch):
     assert cli.digest.write(con, cfg["digest"]) is None  # already digested
 
     # eval with hand labels
-    keys = {r["title"]: r["key"] for r in con.execute("SELECT key, title FROM jobs")}
+    keys = {r["title"]: r["key"] for r in con.query("SELECT key, title FROM jobs")}
     for t, lab in [("Machine Learning Engineer, Computer Vision", 1), ("Data Analyst, Grid Operations", 0),
                    ("Physical Scientist (Remote Sensing)", 1), ("Senior Staff Software Engineer", 1)]:
         con.execute("INSERT INTO labels VALUES (?,?,?)", (keys[t], lab, db.now()))
-    con.commit()
     cli.cmd_eval(cfg, con, SimpleNamespace(), client=fake)
 
 
@@ -265,3 +264,49 @@ def test_example_config_reads_public_sources(tmp_path):
     assert c["filters"]["usajobs"]["max_low_grade"] == 9
     # The public file holds queries only, no personal filter rules.
     assert "max_low_grade" not in c["sources"]["usajobs"]
+
+
+def test_raw_tables_idempotent(cfg, monkeypatch):
+    patch_sources(monkeypatch)
+    con = db.connect(cfg["db_path"])
+    cli.cmd_ingest(cfg, con)
+    first = {s: con.scalar(f"SELECT COUNT(*) FROM raw_{s}") for s in db.RAW_SOURCES}
+    t1 = con.scalar("SELECT max(ingested_at) FROM raw_greenhouse")
+    cli.cmd_ingest(cfg, con)
+    assert {s: con.scalar(f"SELECT COUNT(*) FROM raw_{s}") for s in db.RAW_SOURCES} == first
+    assert first["usajobs"] == 2 and first["greenhouse"] > 0
+    # First load time is kept; latest load time moves forward or stays equal.
+    r = con.query("SELECT first_ingested_at, ingested_at, payload FROM raw_greenhouse LIMIT 1")[0]
+    assert r["first_ingested_at"] <= r["ingested_at"] and r["ingested_at"] >= t1
+    assert '"title"' in r["payload"]  # untouched API payload
+    runs = con.query("SELECT source, rows_fetched, rows_new FROM ingest_runs ORDER BY started_at, source")
+    assert [x["rows_new"] for x in runs if x["source"] == "usajobs"] == [2, 0]
+
+
+def test_raw_upsert_same_id_twice_in_one_batch(tmp_path):
+    con = db.connect(tmp_path / "x.duckdb")
+    n = db.upsert_raw(con, "usajobs", [("1", "a|", None, {"v": 1}), ("1", "b|", None, {"v": 2})], "r1")
+    assert n == 1
+    assert con.query("SELECT board, payload FROM raw_usajobs") == [{"board": "b|", "payload": '{"v": 2}'}]
+
+
+def test_migrates_legacy_sqlite(tmp_path):
+    import sqlite3
+    legacy = sqlite3.connect(tmp_path / "jobradar.db")
+    legacy.executescript("""
+        CREATE TABLE jobs (key TEXT PRIMARY KEY, source TEXT, source_id TEXT, title TEXT, org TEXT,
+            location TEXT, url TEXT, description TEXT, posted TEXT, closes TEXT, extra TEXT,
+            filter_reason TEXT, recall REAL, first_seen TEXT, last_seen TEXT);
+        CREATE TABLE scores (key TEXT PRIMARY KEY, fit INTEGER, recommend TEXT, variant TEXT, evidence TEXT,
+            gaps TEXT, dealbreakers TEXT, pitch TEXT, model TEXT, scored_at TEXT);
+        CREATE TABLE labels (key TEXT PRIMARY KEY, label INTEGER, labeled_at TEXT);
+        CREATE TABLE digested (key TEXT PRIMARY KEY, digest_date TEXT);
+        INSERT INTO jobs VALUES ('k1','lever','a:1','DS','A','CA','u','d',NULL,NULL,'{}',NULL,0.5,'t','t');
+        INSERT INTO scores VALUES ('k1',7,'apply','v','e','[]','[]','p','m','t');
+    """)
+    legacy.commit()
+    legacy.close()
+    con = db.connect(tmp_path / "jobradar.duckdb")
+    assert con.scalar("SELECT recall FROM jobs WHERE key='k1'") == 0.5
+    assert con.scalar("SELECT fit FROM scores") == 7
+    assert (tmp_path / "jobradar.db").exists()  # left in place
