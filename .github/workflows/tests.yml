@@ -38,5 +38,8 @@ jobs:
         run: dbt source freshness --profiles-dir .
       - name: Dashboard builds from the marts
         run: python -m jobradar.pipeline --db ci.duckdb dashboard --out site
+      - name: dbt docs generate
+        working-directory: warehouse
+        run: dbt docs generate --static --profiles-dir .
       - name: Snapshot history across two builds
         run: python -m pytest -q tests/test_dbt_snapshot.py

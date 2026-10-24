@@ -357,7 +357,9 @@ function render(d) {
     s.appendChild(document.createTextNode(r.flagged ? "Flagged: " + r.reason : judged ? "OK" : "Not enough history yet (" + r.reason + ")"));
   });
   const f = document.getElementById("footer");
-  f.appendChild(document.createTextNode("Built daily by GitHub Actions from a DuckDB warehouse modeled with dbt. Aggregates only. Source: "));
+  f.appendChild(document.createTextNode("Built daily by GitHub Actions from a DuckDB warehouse modeled with dbt. Aggregates only. "));
+  const docs = h("a", "Data model, tests and lineage", f); docs.href = "dbt/";
+  f.appendChild(document.createTextNode(". Source: "));
   const a = h("a", "github.com/CameronGordonn/jobradar", f); a.href = "https://github.com/CameronGordonn/jobradar";
 }
 

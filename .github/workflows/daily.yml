@@ -130,6 +130,12 @@ jobs:
       - name: Dashboard
         run: python -m jobradar.pipeline --db data/warehouse.duckdb dashboard --out site
 
+      - name: dbt docs (models, columns, tests, lineage) next to the dashboard
+        working-directory: warehouse
+        run: |
+          dbt docs generate --static --profiles-dir .
+          mkdir -p ../site/dbt && cp target/static_index.html ../site/dbt/index.html
+
       # Once per ISO week: a Parquet export as a release, so the history outlives the
       # 90-day artifact retention. Releases are kept; each is a few MB.
       - name: Weekly Parquet backup
