@@ -192,7 +192,7 @@ def upsert_jobs(con: DB, items: list[tuple[Job, str | None]]) -> int:
         INSERT INTO jobs ({names})
         SELECT {names} FROM (SELECT * FROM _jobs_in QUALIFY row_number() OVER (PARTITION BY key ORDER BY seq DESC) = 1)
         ON CONFLICT (key) DO UPDATE SET
-            description = excluded.description, closes = excluded.closes, extra = excluded.extra,
+            source = excluded.source, source_id = excluded.source_id, description = excluded.description, closes = excluded.closes, extra = excluded.extra,
             filter_reason = excluded.filter_reason, last_seen = excluded.last_seen
     """)
     con.execute("DROP TABLE _jobs_in")

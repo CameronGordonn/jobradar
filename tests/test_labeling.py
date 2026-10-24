@@ -115,3 +115,39 @@ def test_relabel_set_locked_until_a_done_plus_7_days(tmp_path):
     assert lab.scalar("SELECT COUNT(*) FROM labels WHERE set_name='a'") == 200
     assert "open" in labeling.status(lab)[-1]
     assert labeling.relabel_unlock_at(lab) <= db.utcnow() - timedelta(days=1)
+
+
+def test_edited_posting_sampled_once_as_latest_version(tmp_path):
+    main = make_main(tmp_path)
+    # Same source id, retitled in a later run: a second key appears in jobs.
+    old = main.query("SELECT * FROM jobs WHERE source_id='b:0'")[0]
+    main.execute("UPDATE jobs SET last_seen='2000-01-01' WHERE key=?", (old["key"],))
+    db.upsert_jobs(main, [(Job("greenhouse", "b:0", "Data Scientist Retitled", "Org", "CA", "u0", "desc"), None)])
+    db.set_recall(main, [(r["key"], 0.5) for r in main.query("SELECT key FROM jobs WHERE recall IS NULL")])
+    lab = labeling.connect(tmp_path / "labels.duckdb")
+    n = labeling.create_sets(main, lab, seed=1, backend="tfidf")
+    assert n["pool"] == 250
+    assert lab.query("SELECT title FROM pool WHERE source_id='b:0'") == [{"title": "Data Scientist Retitled"}]
+
+
+def test_failed_draw_leaves_nothing_behind(tmp_path, monkeypatch):
+    main = make_main(tmp_path)
+    lab = labeling.connect(tmp_path / "labels.duckdb")
+    monkeypatch.setattr(labeling, "SET_C", 999)  # more than set a holds: sampling fails midway
+    with pytest.raises(ValueError):
+        labeling.create_sets(main, lab, seed=1, backend="tfidf")
+    assert lab.scalar("SELECT COUNT(*) FROM snapshots") == 0 and lab.scalar("SELECT COUNT(*) FROM pool") == 0
+    monkeypatch.setattr(labeling, "SET_C", 40)
+    assert labeling.create_sets(main, lab, seed=1, backend="tfidf")["c"] == 40
+
+
+def test_excerpt_skips_intro_and_reaches_requirements():
+    intro = "We are a great company. " * 60          # ~1440 chars of boilerplate
+    role = "Responsibilities: build models. " * 60    # ~1920 chars
+    reqs = "Qualifications: 2 years of Python. "
+    text = intro + role + reqs + "Benefits. " * 100
+    ex = labeling.excerpt(text)
+    assert ex.startswith("[intro skipped] Responsibilities")
+    assert "Qualifications: 2 years of Python" in ex
+    assert ex.endswith("f shows the full posting]")
+    assert labeling.excerpt("short posting") == "short posting"

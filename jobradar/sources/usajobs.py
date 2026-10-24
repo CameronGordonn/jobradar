@@ -38,7 +38,8 @@ def parse_item(item: dict) -> Job:
 
     return Job(
         source="usajobs",
-        source_id=str(d.get("PositionID") or item.get("MatchedObjectId")),
+        # MatchedObjectId is unique per announcement; agencies reuse PositionID across postings.
+        source_id=str(item.get("MatchedObjectId") or d.get("PositionID")),
         title=d.get("PositionTitle", ""),
         org=f"{d.get('OrganizationName', '')} ({d.get('DepartmentName', '')})",
         # "Multiple Locations" hides the real list from the location filter, so expand it.

@@ -86,6 +86,7 @@ def test_usajobs_parse_and_headers(cfg):
     jobs = list(usajobs.fetch({"keywords": ["ml"], "locations": ["California"]}, s))
     assert len(jobs) == 2
     assert s.calls[0][2]["Authorization-Key"] == "k"
+    assert [j.source_id for j in jobs] == ["111", "222"]  # MatchedObjectId, not the reusable PositionID
     assert s.calls[0][1]["LocationName"] == "California"
     j = jobs[0]
     assert j.extra["hiring_paths"] == ["public", "graduates"]

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import math
 import random
+import re
 from collections import defaultdict
 from datetime import timedelta
 
@@ -24,6 +25,12 @@ LABELS = ("apply", "maybe", "no")
 SET_A, SET_B, SET_C = 200, 30, 40
 RELABEL_WAIT = timedelta(days=7)
 EXCERPT_CHARS = 1500
+REQ_CHARS = 700
+# Where the role itself starts, and where its requirements start. Used only to pick the excerpt.
+_ROLE = re.compile(r"responsibilit|what you.ll do|you will|about the role|the role|duties|"
+                   r"what we.re looking|you may be a good fit|qualifications|requirements", re.I)
+_REQS = re.compile(r"qualifications|requirements|what we.re looking for|you may be a good fit|"
+                   r"you have|minimum|education", re.I)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -105,11 +112,30 @@ def create_sets(main: DB, lab: DB, seed: int, backend: str) -> dict[str, int]:
     rng = random.Random(seed)
     snap = f"s{utcnow():%Y%m%dT%H%M%S}"
 
-    passing = main.query("SELECT * FROM jobs WHERE filter_reason IS NULL AND recall IS NOT NULL ORDER BY key")
-    filtered = main.query("SELECT * FROM jobs WHERE filter_reason IS NOT NULL ORDER BY key")
+    # A posting edited between runs (new title or location) gets a new dedupe key but keeps its
+    # source id, so jobs can hold old versions. Keep the latest version of each.
+    latest = main.query("""SELECT * FROM jobs
+                           QUALIFY row_number() OVER (PARTITION BY source, source_id ORDER BY last_seen DESC, key) = 1
+                           ORDER BY key""")
+    passing = [r for r in latest if r["filter_reason"] is None and r["recall"] is not None]
+    filtered = [r for r in latest if r["filter_reason"] is not None]
     if len(passing) < SET_A:
         raise RuntimeError(f"only {len(passing)} postings passed stage 0; need {SET_A}")
 
+    lab.execute("BEGIN")  # all or nothing: a half-written draw would block a clean redraw
+    try:
+        _write_sets(lab, rng, snap, seed, backend, passing, filtered)
+        lab.execute("COMMIT")
+    except Exception:
+        lab.execute("ROLLBACK")
+        raise
+    return {k: lab.scalar(f"SELECT COUNT(*) FROM {t}") for k, t in
+            [("pool", "pool"), ("a", "label_items WHERE set_name='a'"),
+             ("b", "label_items WHERE set_name='b'"), ("c", "label_items WHERE set_name='c'")]}
+
+
+def _write_sets(lab: DB, rng: random.Random, snap: str, seed: int, backend: str,
+                passing: list[dict], filtered: list[dict]) -> None:
     lab.insert_rows("snapshots", [(snap, utcnow(), seed, backend, len(passing), len(filtered))])
     lab.insert_rows("pool", [(snap, r["key"], r["source"], r["source_id"], r["title"], r["org"], r["location"],
                               r["url"], r["description"], r["extra"], r["posted"], r["first_seen"],
@@ -145,7 +171,6 @@ def create_sets(main: DB, lab: DB, seed: int, backend: str) -> dict[str, int]:
 
     lab.insert_rows("label_items", rows("a", set_a, order[:len(set_a)])
                     + rows("b", set_b, order[len(set_a):]) + rows("c", set_c, c_order))
-    return {"pool": len(passing), "a": len(set_a), "b": len(set_b), "c": len(set_c)}
 
 
 # ---------- relabel lock ----------
@@ -175,6 +200,22 @@ def status(lab: DB) -> list[str]:
 
 # ---------- the labeling loop ----------
 
+def excerpt(desc: str) -> str:
+    """Skip a long company intro, show the role, then the requirements if they come later.
+    The same rule for every posting, so it doesn't favor any of them."""
+    if len(desc) <= EXCERPT_CHARS + REQ_CHARS:
+        return desc
+    m = _ROLE.search(desc)
+    start = m.start() if m and m.start() > 300 else 0
+    parts = [("[intro skipped] " if start else "") + desc[start:start + EXCERPT_CHARS]]
+    end = start + EXCERPT_CHARS
+    r = _REQS.search(desc, end)
+    if r:
+        parts.append("[...]\n" + desc[r.start():r.start() + REQ_CHARS])
+        end = r.start() + REQ_CHARS
+    return "\n".join(parts) + ("\n[... f shows the full posting]" if end < len(desc) else "")
+
+
 def _show(item: dict, full: bool, out) -> None:
     out("\n" + "=" * 80)
     out(f"{item['title']} | {item['org']} | {item['location']}")
@@ -185,10 +226,7 @@ def _show(item: dict, full: bool, out) -> None:
             f"Hiring paths: {', '.join(e.get('hiring_paths') or [])}")
     out("-" * 80)
     desc = item["description"] or ""
-    if full or len(desc) <= EXCERPT_CHARS:
-        out(desc)
-    else:
-        out(desc[:EXCERPT_CHARS] + f"\n[... {len(desc) - EXCERPT_CHARS} more characters: f to show all]")
+    out(desc if full else excerpt(desc))
 
 
 def parse_answer(ans: str) -> tuple[str, str | None] | None:
