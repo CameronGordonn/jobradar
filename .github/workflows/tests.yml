@@ -15,4 +15,4 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       # Tests run on recorded fixtures: no API keys or network needed.
-      - run: pytest -q
+      - run: python -m pytest -q   # -m puts the repo root on sys.path so `jobradar` imports
