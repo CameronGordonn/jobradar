@@ -1,0 +1,76 @@
+version: 2
+
+models:
+  - name: int_jobs_unioned
+    description: The four staging models stacked by column name.
+    columns:
+      - name: job_id
+        data_tests: [unique, not_null]
+
+  - name: int_jobs
+    description: Every posting from every source with a cleaned title, role family, remote flag, posted date and yearly salary.
+    columns:
+      - name: job_id
+        data_tests: [unique, not_null]
+      - name: source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [usajobs, greenhouse, lever, ashby]
+      - name: role_family
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [geospatial_earth, machine_learning, data_science, data_engineering, data_analytics,
+                         sales_gtm, product_design, hardware_robotics, software_engineering, healthcare,
+                         business_operations, other]
+      - name: is_remote
+        data_tests: [not_null]
+      - name: is_open
+        data_tests: [not_null]
+      - name: posted_date
+        data_tests: [not_null]
+      - name: cluster_id
+        data_tests: [not_null]
+
+unit_tests:
+  - name: int_jobs_cleans_titles_classifies_and_annualizes
+    model: int_jobs
+    given:
+      - input: ref('int_jobs_unioned')
+        rows:
+          - {job_id: "lever:a", source: lever, source_job_id: a, board: sunco, company: " SunCo ", title: "  Sr.  ML Engineer ",
+             location: "Remote (US)", salary_min: 50, salary_max: 60, salary_interval: hour,
+             posted_at: "2026-10-01 00:00:00", first_ingested_at: "2026-10-02 00:00:00", ingested_at: "2026-10-02 00:00:00"}
+          - {job_id: "greenhouse:b", source: greenhouse, source_job_id: b, board: solarco, company: SolarCo,
+             title: "GIS Analyst", location: "Denver, CO", salary_min: 80000, salary_max: 90000, salary_interval: year,
+             first_ingested_at: "2026-10-03 00:00:00", ingested_at: "2026-10-01 00:00:00"}
+          - {job_id: "greenhouse:c", source: greenhouse, source_job_id: c, board: solarco, company: SolarCo,
+             title: "Mechanical Engineer", location: "Denver, CO", workplace_type: onsite,
+             first_ingested_at: "2026-10-01 00:00:00", ingested_at: "2026-10-03 00:00:00"}
+          - {job_id: "usajobs:d", source: usajobs, source_job_id: d, board: "q|", company: "Example Survey",
+             title: "Office Clerk", location: "Reston, Virginia", closes_at: "2099-01-01 00:00:00",
+             first_ingested_at: "2026-09-01 00:00:00", ingested_at: "2026-09-01 00:00:00"}
+      - input: ref('role_families')
+        rows:
+          - {priority: 1, role_family: geospatial_earth, pattern: '\b(gis|geospatial)\b'}
+          - {priority: 2, role_family: machine_learning, pattern: '\b(machine learning)\b'}
+          - {priority: 8, role_family: hardware_robotics, pattern: '\b(mechanical)\b'}
+          - {priority: 9, role_family: software_engineering, pattern: '\b(engineer)\b'}
+      - input: source('jobradar', 'job_clusters')
+        format: sql
+        rows: |
+          select null::varchar as job_id, null::varchar as cluster_id, null::double as threshold,
+                 null::timestamp as clustered_at
+          where false
+    expect:
+      rows:
+        - {job_id: "lever:a", company: SunCo, title_clean: "Sr. ML Engineer", title_norm: "senior machine learning engineer",
+           role_family: machine_learning, is_remote: true, salary_min_annual: 104000, posted_date: "2026-10-01", is_open: true}
+        - {job_id: "greenhouse:b", company: SolarCo, title_clean: "GIS Analyst", title_norm: "gis analyst",
+           role_family: geospatial_earth, is_remote: false, salary_min_annual: 80000, posted_date: "2026-10-03", is_open: false}
+        - {job_id: "greenhouse:c", company: SolarCo, title_clean: "Mechanical Engineer", title_norm: "mechanical engineer",
+           role_family: hardware_robotics, is_remote: false, salary_min_annual: null, posted_date: "2026-10-01", is_open: true}
+        - {job_id: "usajobs:d", company: "Example Survey", title_clean: "Office Clerk", title_norm: "office clerk",
+           role_family: other, is_remote: false, salary_min_annual: null, posted_date: "2026-09-01", is_open: true}

@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: mart_open_postings
+    description: Open postings now, near-duplicates collapsed to one row (the earliest posted variant).
+    columns:
+      - name: posting_id
+        data_tests: [unique, not_null]
+      - name: job_id
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_jobs')
+                field: job_id
+      - name: variants
+        data_tests: [not_null]
+
+  - name: mart_daily_postings
+    description: Postings published per day per source, and the feed size of that day's last run.
+    columns:
+      - name: day_source
+        data_tests: [unique, not_null]
+      - name: source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [usajobs, greenhouse, lever, ashby]
+
+  - name: mart_weekly_postings
+    description: New postings per week by role family and company (deduplicated).
+    columns:
+      - name: grain_key
+        data_tests: [unique, not_null]
+
+  - name: mart_source_health
+    description: Per-run, per-source row counts with the trailing-median quality check.
+    columns:
+      - name: run_id
+        data_tests: [not_null]
+      - name: flagged
+        data_tests: [not_null]

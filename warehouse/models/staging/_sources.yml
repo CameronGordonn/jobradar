@@ -1,0 +1,42 @@
+version: 2
+
+sources:
+  - name: jobradar
+    description: Raw tables written by `python -m jobradar.pipeline ingest`. One row per source job id, payload untouched.
+    schema: main
+    loaded_at_field: ingested_at
+    freshness:   # the scheduled job runs daily
+      warn_after: {count: 30, period: hour}
+      error_after: {count: 54, period: hour}
+    tables:
+      - name: raw_usajobs
+        columns: &raw_cols
+          - name: source_id
+            data_tests: [unique, not_null]
+          - name: payload
+            data_tests: [not_null]
+          - name: ingested_at
+            data_tests: [not_null]
+      - name: raw_greenhouse
+        columns: *raw_cols
+      - name: raw_lever
+        columns: *raw_cols
+      - name: raw_ashby
+        columns: *raw_cols
+      - name: ingest_runs
+        description: Rows fetched and new per source per run.
+        loaded_at_field: finished_at
+        columns:
+          - name: run_id
+            data_tests: [not_null]
+          - name: source
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: [usajobs, greenhouse, lever, ashby]
+      - name: quality_checks
+        description: Per-source row count against its trailing 7-run median.
+        freshness: null
+      - name: job_clusters
+        description: Near-duplicate clusters from embedding similarity. Empty until a threshold is chosen.
+        freshness: null

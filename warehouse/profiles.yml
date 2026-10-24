@@ -1,0 +1,9 @@
+# The warehouse file comes from JOBRADAR_WAREHOUSE so CI, the scheduled job and local runs
+# can each point at their own DuckDB file.
+jobradar:
+  target: default
+  outputs:
+    default:
+      type: duckdb
+      path: "{{ env_var('JOBRADAR_WAREHOUSE', '../data/warehouse.duckdb') }}"
+      threads: 4

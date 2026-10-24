@@ -1,0 +1,45 @@
+version: 2
+
+# Every staging model has the same columns, so the intermediate union is by name.
+x-shared-columns: &shared_columns
+  - name: job_id
+    description: "<source>:<source job id>"
+    data_tests: [unique, not_null]
+  - name: source
+    data_tests:
+      - not_null
+      - accepted_values:
+          arguments:
+            values: [usajobs, greenhouse, lever, ashby]
+  - name: source_job_id
+    data_tests: [not_null]
+  - name: title
+    data_tests: [not_null]
+  - name: company
+    data_tests: [not_null]
+  - name: workplace_type
+    data_tests:
+      - accepted_values:
+          arguments:
+            values: [remote, hybrid, onsite]
+  - name: salary_interval
+    data_tests:
+      - accepted_values:
+          arguments:
+            values: [year, month, biweekly, week, day, hour]
+  - name: ingested_at
+    data_tests: [not_null]
+
+models:
+  - name: stg_greenhouse
+    description: Greenhouse job board postings, one per job id. Salary from pay_input_ranges (USD zones spanned).
+    columns: *shared_columns
+  - name: stg_lever
+    description: Lever postings. Salary from salaryRange.
+    columns: *shared_columns
+  - name: stg_ashby
+    description: Ashby postings. Salary from compensation summaryComponents of type Salary.
+    columns: *shared_columns
+  - name: stg_usajobs
+    description: USAJOBS announcements, keyed on MatchedObjectId. Salary from PositionRemuneration.
+    columns: *shared_columns
