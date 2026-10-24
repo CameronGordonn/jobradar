@@ -30,7 +30,6 @@ sources:
       - {token: gomotive, name: "Motive"}
       - {token: nuro, name: "Nuro"}
       - {token: figureai, name: "Figure AI"}
-      - {token: carbonrobotics, name: "Carbon Robotics"}
       # Geospatial, remote sensing, weather, energy
       - {token: planetlabs, name: "Planet Labs"}
       - {token: overstory, name: "Overstory"}
@@ -63,6 +62,7 @@ sources:
       - {token: watershed, name: "Watershed"}        # carbon accounting
       - {token: mapbox, name: "Mapbox"}              # maps / geospatial
       - {token: teamworks, name: "Teamworks"}        # sports tech
+      - {token: carbon-robotics, name: "Carbon Robotics"}  # moved from Greenhouse in Oct 2026; CV for agriculture
 
 # Near-duplicate collapse in the marts (python -m jobradar.pipeline dedupe).
 dedupe:
