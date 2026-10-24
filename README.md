@@ -24,9 +24,9 @@ cp .env.example .env && chmod 600 .env   # then fill in the keys with an editor
 
 `.env` needs `ANTHROPIC_API_KEY`, `USAJOBS_API_KEY` (free: https://developer.usajobs.gov/apirequest/) and `USAJOBS_EMAIL`. It is gitignored.
 
-1. Paste plain-text resumes into `resumes/` and list each one under `resumes:` in `config.yaml`.
+1. `cp config.example.yaml config.yaml` (gitignored). Paste plain-text resumes into `resumes/` and list each one under `resumes:` in `config.yaml`. Personal filters (location, seniority, GS grade) also go there.
 2. Copy `rubric.example.md` to `rubric.md` and fill in the candidate section. `rubric.md` is gitignored.
-3. Add Greenhouse, Lever and Ashby boards to `config.yaml`, checking each token first:
+3. Add Greenhouse, Lever and Ashby boards to `sources.yaml` (committed, public), checking each token first:
    `python -m jobradar.cli probe greenhouse|lever|ashby <token>`
 
 ## Daily use

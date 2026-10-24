@@ -25,12 +25,15 @@ def load_config(path: str) -> dict:
     cfg = yaml.safe_load(p.read_text())
     base = p.parent
     cfg["_base"] = base
-    cfg["db_path"] = str(base / cfg.get("db_path", "data/jobradar.db"))
+    if "sources" not in cfg:  # public source list lives in its own committed file
+        cfg["sources"] = yaml.safe_load((base / cfg.get("sources_path", "sources.yaml")).read_text())["sources"]
+    cfg["db_path"] = str(base / cfg.get("db_path", "data/jobradar.duckdb"))
+    cfg["labels_db_path"] = str(base / cfg.get("labels_db_path", "data/labels.duckdb"))
     cfg["rubric_text"] = (base / cfg["rubric_path"]).read_text()
     cfg["resume_texts"] = {k: (base / v).read_text() for k, v in cfg["resumes"].items()}
     cfg.setdefault("digest", {})["out_dir"] = str(base / cfg["digest"].get("out_dir", "digests"))
-    # usajobs-specific filter settings live under sources.usajobs but filters.check reads them here
-    cfg["filters"]["usajobs"] = cfg["sources"].get("usajobs", {})
+    # Older configs kept the usajobs grade and hiring-path rules under sources.usajobs.
+    cfg["filters"].setdefault("usajobs", cfg["sources"].get("usajobs", {}))
     return cfg
 
 

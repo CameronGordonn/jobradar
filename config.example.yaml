@@ -1,0 +1,40 @@
+# Copy to config.yaml (gitignored) and edit. Paths are relative to this file.
+db_path: data/jobradar.duckdb
+labels_db_path: data/labels.duckdb   # hand labels live in their own file so a warehouse rebuild can't touch them
+rubric_path: rubric.md
+sources_path: sources.yaml
+
+# One entry per resume variant. Paste plain text versions of your resumes into these files.
+resumes:
+  main: resumes/main.txt
+
+filters:
+  # Matched as whole words, case-insensitive. Only the title is checked.
+  exclude_title: [senior, sr, staff, principal, director, manager, head, vp, "vice president", lead, intern, internship]
+  # Whole-word match against location. Add your state and city. "United States" keeps remote-US postings.
+  location_allow: [Remote, Anywhere, "United States", USA]
+  # Whole-word. Drops "Remote - Canada" style postings unless a concrete allowed location is also listed.
+  location_block: [Canada, Mexico, "United Kingdom", UK, London, Europe, EU, EMEA, India, Singapore, Australia, LATAM, APAC]
+  # Plain substring match against the description.
+  exclude_text: ["ts/sci", "top secret", "polygraph", "active secret clearance"]
+  # Drops a job only if the SMALLEST years-of-experience number in the posting exceeds this.
+  max_years_required: 3
+  usajobs:
+    # Codes: https://data.usajobs.gov/api/codelist/hiringpaths
+    # "public" = open to all US citizens, "graduates" = Pathways Recent Graduates
+    allowed_hiring_paths: [public, graduates]
+    max_low_grade: 9      # GS-7 is typical for a BS with a 3.0+ GPA; GS-9 usually wants an MS or a year of experience
+
+recall:
+  backend: tfidf        # or "embeddings" (pip install sentence-transformers)
+  top_k: 40             # max Claude calls per run
+  min_recall: 0.0
+
+rerank:
+  model: claude-haiku-4-5-20251001
+  max_desc_chars: 8000
+
+digest:
+  top_n: 10
+  min_fit: 6
+  out_dir: digests

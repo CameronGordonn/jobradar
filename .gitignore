@@ -8,3 +8,4 @@ rubric.md
 resumes/*
 !resumes/.gitkeep
 .pytest_cache/
+/config.yaml

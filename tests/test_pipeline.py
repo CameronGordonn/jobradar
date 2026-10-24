@@ -51,22 +51,22 @@ class FakeClaude:
             "gaps": ["gap"], "dealbreakers": [], "pitch": "I built a rooftop solar detector."})])
 
 
+def write_resumes(base):
+    (base / "resumes").mkdir()
+    (base / "resumes/geospatial_cv.txt").write_text(
+        "Computer vision engineer. Rooftop solar panel detection with PyTorch on aerial and satellite imagery. Geospatial raster pipelines.")
+    (base / "resumes/data_science.txt").write_text(
+        "Data scientist. A/B testing, SQL, Python, statistics, diffusion models, forecasting.")
+    (base / "resumes/software_eng.txt").write_text(
+        "Full-stack engineer. Next.js, React, TypeScript, FastAPI, Docker, CI.")
+
+
 @pytest.fixture
 def cfg(tmp_path, monkeypatch):
-    shutil.copy(ROOT / "config.yaml", tmp_path / "config.yaml")
-    shutil.copy(ROOT / "rubric.example.md", tmp_path / "rubric.md")  # rubric.md is personal and gitignored
-    (tmp_path / "resumes").mkdir()
-    (tmp_path / "resumes/geospatial_cv.txt").write_text(
-        "Computer vision engineer. Rooftop solar panel detection with PyTorch on aerial and satellite imagery. Geospatial raster pipelines.")
-    (tmp_path / "resumes/data_science.txt").write_text(
-        "Data scientist. A/B testing, SQL, Python, statistics, diffusion models, forecasting.")
-    (tmp_path / "resumes/software_eng.txt").write_text(
-        "Full-stack engineer. Next.js, React, TypeScript, FastAPI, Docker, CI.")
-    raw = yaml.safe_load((tmp_path / "config.yaml").read_text())
-    raw["sources"]["greenhouse"]["boards"] = [{"token": "solarco", "name": "SolarCo"}]
-    for src in ("lever", "ashby"):  # keep tests offline; their adapters have their own tests
-        raw["sources"][src]["boards"] = []
-    (tmp_path / "config.yaml").write_text(yaml.safe_dump(raw))
+    # config.yaml and rubric.md are personal and gitignored; tests use committed stand-ins.
+    shutil.copy(FIX / "config.yaml", tmp_path / "config.yaml")
+    shutil.copy(ROOT / "rubric.example.md", tmp_path / "rubric.md")
+    write_resumes(tmp_path)
     monkeypatch.setenv("USAJOBS_API_KEY", "k")
     monkeypatch.setenv("USAJOBS_EMAIL", "me@example.com")
     return cli.load_config(str(tmp_path / "config.yaml"))
@@ -252,3 +252,16 @@ def test_every_rerank_failing_fails_the_run(cfg, monkeypatch):
     with pytest.raises(RuntimeError, match="failed for all"):
         cli.cmd_score(cfg, con, client=fake)
     assert fake.n > 1  # transient errors still get tried on every job
+
+
+def test_example_config_reads_public_sources(tmp_path):
+    for f in ("config.example.yaml", "sources.yaml"):
+        shutil.copy(ROOT / f, tmp_path / f)
+    shutil.copy(ROOT / "rubric.example.md", tmp_path / "rubric.md")
+    (tmp_path / "resumes").mkdir()
+    (tmp_path / "resumes/main.txt").write_text("resume")
+    c = cli.load_config(str(tmp_path / "config.example.yaml"))
+    assert set(c["sources"]) == {"usajobs", "greenhouse", "lever", "ashby"}
+    assert c["filters"]["usajobs"]["max_low_grade"] == 9
+    # The public file holds queries only, no personal filter rules.
+    assert "max_low_grade" not in c["sources"]["usajobs"]
