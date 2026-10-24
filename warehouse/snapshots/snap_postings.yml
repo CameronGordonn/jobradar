@@ -1,0 +1,17 @@
+snapshots:
+  - name: snap_postings
+    relation: ref('int_jobs')
+    description: >
+      Type 2 history of each posting. The raw tables keep only the latest payload, so this is
+      where title, location, salary, remote and open/closed changes are kept. A new version is
+      written when any checked column changes between runs.
+    config:
+      schema: snapshots
+      unique_key: job_id
+      strategy: check
+      check_cols: [title_clean, location, salary_min_annual, salary_max_annual, workplace_type, is_open]
+    columns:
+      - name: dbt_scd_id
+        data_tests: [unique, not_null]
+      - name: job_id
+        data_tests: [not_null]

@@ -117,6 +117,21 @@ a { color: var(--series-1); }
     </section>
   </div>
 
+  <div class="grid2">
+    <section class="card">
+      <h2>Median days listed by role family</h2>
+      <p class="note" id="lifecycle-note">Closed board postings: days from publication to the last run that still listed them.
+        Postings that stay open longer are more likely to be caught, so early medians run high. Families with 10 or more.</p>
+      <div class="chart" id="lifecycle"></div>
+      <details><summary>Table</summary><div id="lifecycle-table"></div></details>
+    </section>
+    <section class="card">
+      <h2>Edits after publishing</h2>
+      <p class="note">From the snapshot history: postings whose title, location, salary or remote status changed after the pipeline first saw them.</p>
+      <div id="changes" class="tiles" style="margin:12px 0 0"></div>
+    </section>
+  </div>
+
   <section class="card" style="margin-top:12px">
     <h2>Pipeline health</h2>
     <p class="note">Latest run per source. A source is flagged when it returns less than half the median of its previous 7 runs.</p>
@@ -293,8 +308,27 @@ function render(d) {
       .map(r => ({ ...r, label: nice(r.label) })), pct, 1);
     barChart(document.getElementById("salary"), d.salary_by_family.map(r => ({ ...r, label: nice(r.label) })), usd);
   };
-  draw();
-  let timer; window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(draw, 150); });
+  const days = v => Math.round(v) + " days";
+  const drawLifecycle = () => {
+    const box = document.getElementById("lifecycle");
+    if (d.lifecycle_by_family.length) {
+      barChart(box, d.lifecycle_by_family.map(r => ({ ...r, label: nice(r.label) })), days);
+    } else {
+      box.replaceChildren();
+      h("p", `Not enough history yet: ${fmt.format(d.closed_postings)} closed postings so far. This fills in as postings close between daily runs.`, box, "note");
+    }
+  };
+  const drawAll = () => { draw(); drawLifecycle(); };
+  drawAll();
+  table(document.getElementById("lifecycle-table"), ["Role family", "Median days listed", "Closed postings"],
+        d.lifecycle_by_family.map(r => [nice(r.label), days(r.value), fmt.format(r.n)]), [1, 2]);
+  const ch = document.getElementById("changes"), c = d.changes;
+  [["Postings tracked", fmt.format(c.tracked), "with snapshot history"],
+   ["Edited", c.tracked ? pct(c.edited / c.tracked) : "n/a", `${fmt.format(c.edited)} postings`],
+   ["Salary changed", fmt.format(c.salary_edited), "postings"]].forEach(([l, v, hint]) => {
+    const t = h("div", undefined, ch, "tile"); h("div", l, t, "label"); h("div", v, t, "value"); h("div", hint, t, "hint");
+  });
+  let timer; window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(drawAll, 150); });
 
   for (const [id, rows, head] of [["weekly-table", d.weekly_by_source, "Week"], ["feed-table", d.feed_by_source, "Day"]]) {
     const xs = [...new Set(rows.map(r => r.x))].sort();

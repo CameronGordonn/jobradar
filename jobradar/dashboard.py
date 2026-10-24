@@ -39,6 +39,13 @@ def export(con: DB, sources_path: Path) -> dict:
     health = q("""SELECT source, started_at, rows_fetched, trailing_median, flagged, reason FROM (
                       SELECT *, row_number() OVER (PARTITION BY source ORDER BY started_at DESC) rn
                       FROM marts.mart_source_health) WHERE rn = 1 ORDER BY source""")
+    lifecycle = q("""SELECT role_family, COUNT(*) AS n, median(days_listed) AS median_days
+                     FROM marts.mart_posting_lifecycle GROUP BY 1 HAVING COUNT(*) >= 10 ORDER BY 3 DESC""")
+    closed = con.scalar("SELECT COUNT(*) FROM marts.mart_posting_lifecycle")
+    changes = q("""SELECT COUNT(*) AS tracked, COUNT(*) FILTER (WHERE title_changes + location_changes
+                          + salary_changes + workplace_changes > 0) AS edited,
+                          COUNT(*) FILTER (WHERE salary_changes > 0) AS salary_edited
+                   FROM marts.mart_posting_changes""")[0]
     salary = q("""SELECT role_family, COUNT(*) AS n,
                          median((salary_min_annual + salary_max_annual) / 2) AS median_mid
                   FROM marts.mart_open_postings
@@ -60,6 +67,10 @@ def export(con: DB, sources_path: Path) -> dict:
                              for r in family if r["open"] >= 10],
         "top_companies": [{"label": r["company"], "value": r["open"]} for r in companies],
         "salary_by_family": [{"label": r["role_family"], "value": r["median_mid"], "n": r["n"]} for r in salary],
+        "lifecycle_by_family": [{"label": r["role_family"], "value": float(r["median_days"]), "n": r["n"]}
+                                for r in lifecycle],
+        "closed_postings": closed,
+        "changes": changes,
         "health": [{"source": r["source"], "last_run": str(r["started_at"])[:16], "rows": r["rows_fetched"],
                     "trailing_median": r["trailing_median"], "flagged": bool(r["flagged"]), "reason": r["reason"]}
                    for r in health],

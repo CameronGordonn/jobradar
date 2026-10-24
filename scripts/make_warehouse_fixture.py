@@ -1,5 +1,6 @@
-"""Write tests/fixtures/warehouse/runs.json: eight synthetic daily runs of API responses
-for CI. Companies, titles and numbers are made up. Deterministic (seeded).
+"""Write tests/fixtures/warehouse/runs.json (eight synthetic daily runs of API responses) and
+changes.json (one later run with edits and closures, for the snapshot test). Companies,
+titles and numbers are made up. Deterministic (seeded).
 
     python scripts/make_warehouse_fixture.py
 """
@@ -11,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "tests/fixtures/warehouse/runs.json"
+CHANGES = OUT.with_name("changes.json")
 RUNS = 8
 TODAY = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)  # posted dates are relative to this
 
@@ -113,6 +115,20 @@ def main():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(runs, sort_keys=True, separators=(",", ":")))
     print(f"wrote {OUT} ({OUT.stat().st_size // 1024} KB)")
+
+    # One more run after the eight, for the snapshot test: two retitles, a salary change, three closures.
+    nxt = json.loads(json.dumps(runs[-1]))
+    nxt["days_ago"] = 0
+    gh = nxt["responses"]["greenhouse"]
+    for job in gh["solarco"]["jobs"][:2]:
+        job["title"] += " II"
+    gh["gridworks"]["jobs"] = gh["gridworks"]["jobs"][:-3]
+    for comp in nxt["responses"]["ashby"]["voltline"]["jobs"]:
+        if comp["compensation"]["summaryComponents"]:
+            comp["compensation"]["summaryComponents"][0]["maxValue"] += 10000
+            break
+    CHANGES.write_text(json.dumps([nxt], sort_keys=True, separators=(",", ":")))
+    print(f"wrote {CHANGES}")
 
 
 if __name__ == "__main__":

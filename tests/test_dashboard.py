@@ -26,9 +26,16 @@ def test_dashboard_exports_aggregates_only(tmp_path):
     con.execute("""CREATE TABLE marts.mart_source_health AS SELECT * FROM (VALUES
         ('r1', 'greenhouse', TIMESTAMP '2026-10-01 00:00:00', 40, 41.0, false, 'ok'))
         AS t(run_id, source, started_at, rows_fetched, trailing_median, flagged, reason)""")
+    con.execute("""CREATE TABLE marts.mart_posting_lifecycle AS SELECT * FROM (VALUES
+        ('greenhouse:9', 'greenhouse', 'X', 'machine_learning', 12)) AS t(job_id, source, company, role_family, days_listed)""")
+    con.execute("""CREATE TABLE marts.mart_posting_changes AS SELECT * FROM (VALUES
+        ('greenhouse:1', 2, 1, 0, 0, 0), ('greenhouse:2', 1, 0, 0, 0, 0))
+        AS t(job_id, versions, title_changes, location_changes, salary_changes, workplace_changes)""")
     (tmp_path / "sources.yaml").write_text(SOURCES)
     d = dashboard.build(con, tmp_path / "sources.yaml", tmp_path / "site")
     assert d["tiles"]["open_postings"] == 3 and d["tiles"]["open_before_dedupe"] == 4
+    assert d["closed_postings"] == 1 and d["lifecycle_by_family"] == []   # under 10 per family: not shown
+    assert d["changes"] == {"tracked": 2, "edited": 1, "salary_edited": 0}
     assert d["scope"] == {"usajobs_queries": 4, "usajobs_keywords": ["a", "b"],
                           "boards": {"greenhouse": 2, "lever": 0, "ashby": 1}, "board_count": 3}
     assert d["feed_by_source"] == [{"x": d["feed_by_source"][0]["x"], "source": "greenhouse", "n": 40}]
