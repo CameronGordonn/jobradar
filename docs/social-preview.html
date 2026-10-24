@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>jobradar preview</title>
+<!-- Source for social-preview.png (1280x640). Render with any headless Chromium:
+     chrome --headless --window-size=1280,640 --screenshot=docs/social-preview.png docs/social-preview.html -->
+<style>
+* { box-sizing: border-box; margin: 0; }
+body { width: 1280px; height: 640px; background: #f9f9f7; color: #0b0b0b;
+       font: 18px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 56px 64px; }
+h1 { font-size: 64px; font-weight: 700; letter-spacing: -1px; }
+.sub { font-size: 26px; color: #52514e; margin-top: 6px; }
+.rule { height: 1px; background: #e1e0d9; margin: 30px 0 34px; }
+.lane { display: flex; align-items: center; gap: 10px; margin-bottom: 26px; }
+.tag { flex: none; width: 124px; font-size: 15px; color: #52514e; text-transform: uppercase; letter-spacing: 1px; }
+.box { background: #fcfcfb; border: 1px solid rgba(11,11,11,0.10); border-radius: 10px; padding: 12px 14px;
+       font-size: 18px; white-space: nowrap; }
+.box small { display: block; font-size: 13px; color: #898781; }
+.arrow { color: #c3c2b7; font-size: 22px; }
+.k1 { border-left: 4px solid #2a78d6; } .k2 { border-left: 4px solid #eb6834; }
+.foot { position: absolute; bottom: 44px; left: 64px; font-size: 16px; color: #898781; }
+</style></head>
+<body>
+  <h1>jobradar</h1>
+  <p class="sub">Job postings from USAJOBS and 24 company boards: ranked for one person, and kept as a public warehouse.</p>
+  <div class="rule"></div>
+  <div class="lane">
+    <div class="tag">Ranking</div>
+    <div class="box k1">Hard filters<small>title, location, years, grade</small></div><span class="arrow">&rarr;</span>
+    <div class="box k1">TF-IDF recall<small>top 40 per run</small></div><span class="arrow">&rarr;</span>
+    <div class="box k1">Claude rerank<small>rubric, one call per posting</small></div><span class="arrow">&rarr;</span>
+    <div class="box k1">Evaluated<small>blind hand labels, bootstrap CIs</small></div>
+  </div>
+  <div class="lane">
+    <div class="tag">Warehouse</div>
+    <div class="box k2">Raw tables<small>DuckDB, idempotent upserts</small></div><span class="arrow">&rarr;</span>
+    <div class="box k2">dbt models<small>staging, marts, snapshot, tests</small></div><span class="arrow">&rarr;</span>
+    <div class="box k2">Quality + dedupe<small>row-count alerts, embeddings</small></div><span class="arrow">&rarr;</span>
+    <div class="box k2">Dashboard<small>daily on GitHub Actions</small></div>
+  </div>
+  <p class="foot">github.com/CameronGordonn/jobradar</p>
+</body></html>
