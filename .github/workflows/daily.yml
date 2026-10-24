@@ -32,17 +32,22 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-pipeline.txt
+
+      # After Install, so PyYAML is there. Written to a variable first: a failure inside $(...)
+      # passed to echo would not fail the step and would quietly record an empty answer.
       - name: Is a dedupe threshold set?
         id: dedupe
-        run: echo "enabled=$(python -c "import yaml; print(str((yaml.safe_load(open('sources.yaml')).get('dedupe') or {}).get('threshold') is not None).lower())")" >> "$GITHUB_OUTPUT"
-
-      - name: Install
         run: |
-          pip install -r requirements.txt -r requirements-pipeline.txt
-          if [ "${{ steps.dedupe.outputs.enabled }}" = "true" ]; then
-            pip install torch --index-url https://download.pytorch.org/whl/cpu
-            pip install -r requirements-eval.txt
-          fi
+          enabled=$(python -c "import yaml; print(str((yaml.safe_load(open('sources.yaml')).get('dedupe') or {}).get('threshold') is not None).lower())")
+          echo "enabled=$enabled" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Install the embedding model's dependencies (dedupe only)
+        if: steps.dedupe.outputs.enabled == 'true'
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-eval.txt
 
       - name: Cache the embedding model
         if: steps.dedupe.outputs.enabled == 'true'
