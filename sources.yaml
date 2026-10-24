@@ -63,3 +63,8 @@ sources:
       - {token: watershed, name: "Watershed"}        # carbon accounting
       - {token: mapbox, name: "Mapbox"}              # maps / geospatial
       - {token: teamworks, name: "Teamworks"}        # sports tech
+
+# Near-duplicate collapse in the marts (python -m jobradar.pipeline dedupe).
+dedupe:
+  model: BAAI/bge-small-en-v1.5
+  threshold: null   # pending: chosen from hand-marked pairs with `python -m jobradar.pipeline dedupe-eval`

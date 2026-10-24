@@ -1,4 +1,7 @@
 from datetime import timedelta
+
+import numpy as np
+import pytest
 from pathlib import Path
 
 from jobradar import db, pipeline
@@ -56,3 +59,45 @@ def test_fixture_replay_is_idempotent_and_catches_the_outage(tmp_path):
     assert flagged == [{"run_id": "fixture05", "source": "lever"}]
     # Latest load is "now", so dbt source freshness passes in CI.
     assert con.scalar("SELECT max(ingested_at) FROM raw_greenhouse") >= db.utcnow() - timedelta(minutes=5)
+
+
+def fake_jobs():
+    """Two companies; Acme lists one role under two titles, plus an unrelated role."""
+    rows = [("a1", "Acme", "Machine Learning Engineer", "SF"), ("a2", "Acme", "ML Engineer", "SF"),
+            ("a3", "Acme", "Accountant", "SF"), ("a4", "Acme", "Accountant", "SF"),
+            ("b1", "Beta", "ML Engineer", "SF")]
+    return [{"job_id": j, "company": c, "title": t, "location": l, "url": "u", "exact_key": f"{c}|{t}|{l}"}
+            for j, c, t, l in rows]
+
+
+def fake_embed(jobs):
+    vecs = {"Machine Learning Engineer": [1, 0.05, 0], "ML Engineer": [1, 0, 0], "Accountant": [0, 0, 1]}
+    E = np.array([vecs[j["title"]] for j in jobs], dtype=float)
+    return E / np.linalg.norm(E, axis=1, keepdims=True)
+
+
+def test_dedupe_clusters_within_company_only():
+    from jobradar import dedupe
+    jobs = fake_jobs()
+    E = fake_embed(jobs)
+    pairs = dedupe.company_pairs(jobs, E, 0.5)
+    assert [(jobs[a]["job_id"], jobs[b]["job_id"]) for a, b, _ in pairs] == [("a1", "a2")]  # a3/a4 exact, b1 other co
+    m = dedupe.cluster(jobs, E, 0.99)
+    assert m == {"a1": "a1", "a2": "a1", "a3": "a3", "a4": "a3", "b1": "b1"}
+    assert dedupe.collapsed_share(m) == pytest.approx(2 / 5)
+
+
+def test_dedupe_threshold_rule_and_blind_marking(tmp_path):
+    from jobradar import dedupe
+    rows = [{"pair_id": i, "sim": s, "bin": 0, "weight": 1.0, "job_a": "x", "job_b": "y", "company": "C",
+             "title_a": "T", "location_a": "L", "url_a": "u", "title_b": "T2", "location_b": "L", "url_b": "u",
+             "same": ""} for i, s in enumerate([0.86, 0.90, 0.93, 0.96, 0.99])]
+    path = tmp_path / "pairs.csv"
+    dedupe.write_pairs(path, rows)
+    shown = []
+    answers = iter(["n", "n", "y", "y", "y"])
+    assert dedupe.mark_loop(path, ask=lambda p: next(answers), out=shown.append) == 5
+    assert "0.9" not in "\n".join(shown)  # similarity never shown
+    res = dedupe.evaluate(dedupe.read_pairs(path))
+    assert res["chosen"]["threshold"] == 0.93 and res["chosen"]["precision_w"] == 1.0
+    assert res["chosen"]["recall_w"] == 1.0

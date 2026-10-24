@@ -138,10 +138,23 @@ def main(argv=None):
     fp = sub.add_parser("load-fixtures", help="build a warehouse from the committed synthetic fixture")
     fp.add_argument("--path", default="tests/fixtures/warehouse/runs.json")
     sub.add_parser("init", help="create empty warehouse tables")
+    dp = sub.add_parser("dedupe-candidates", help="draw 50 same-company pairs across the similarity range to mark")
+    dp.add_argument("--out", default="data/dedupe_pairs.csv")
+    mp = sub.add_parser("dedupe-mark", help="mark candidate pairs same/different (similarity hidden)")
+    mp.add_argument("--pairs", default="data/dedupe_pairs.csv")
+    ep = sub.add_parser("dedupe-eval", help="pick the threshold from the marks; precision, recall, share collapsed")
+    ep.add_argument("--pairs", default="data/dedupe_pairs.csv")
+    ap_ = sub.add_parser("dedupe", help="cluster postings at the threshold in sources.yaml into job_clusters")
+    ap_.add_argument("--sources", default="sources.yaml")
+    ap_.add_argument("--threshold", type=float, default=None)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
 
+    if args.cmd == "dedupe-mark":  # works on the CSV only
+        from . import dedupe
+        print(f"marked {dedupe.mark_loop(Path(args.pairs))} pairs")
+        return
     con = db.connect(args.db, app_tables=False)
     if args.cmd == "ingest":
         sources = yaml.safe_load(Path(args.sources).read_text())["sources"]
@@ -155,6 +168,50 @@ def main(argv=None):
             print(f"::warning title=Data quality::{line}" if c["flagged"] else line)
     elif args.cmd == "load-fixtures":
         print(f"loaded {load_fixture_runs(con, Path(args.path))} fixture runs into {args.db}")
+    elif args.cmd == "dedupe-candidates":
+        from . import dedupe
+        if Path(args.out).exists():
+            sys.exit(f"{args.out} exists; candidates are drawn once so marks stay valid")
+        jobs = dedupe.load_jobs(con)
+        E = dedupe.embed(jobs)
+        pairs = dedupe.company_pairs(jobs, E, dedupe.LOW)
+        rows = dedupe.sample_candidates(jobs, pairs)
+        dedupe.write_pairs(Path(args.out), rows)
+        print(f"{len(jobs)} open postings, {len(pairs)} same-company pairs with similarity >= {dedupe.LOW}; "
+              f"wrote {len(rows)} candidates to {args.out}")
+    elif args.cmd == "dedupe-eval":
+        from . import dedupe
+        res = dedupe.evaluate(dedupe.read_pairs(Path(args.pairs)))
+        if res["status"] != "ok":
+            print(f"pending: {res['reason']}")
+        else:
+            c = res["chosen"]
+            jobs = dedupe.load_jobs(con)
+            mapping = dedupe.cluster(jobs, dedupe.embed(jobs), c["threshold"])
+            exact = {j["job_id"]: j["exact_key"] for j in jobs}
+            res.update(postings=len(jobs), collapsed_share=dedupe.collapsed_share(mapping),
+                       collapsed_share_exact_only=dedupe.collapsed_share(exact))
+            out = Path("results/dedupe_eval.json")
+            out.parent.mkdir(exist_ok=True)
+            out.write_text(json.dumps(res, indent=2))
+            print(f"{res['marked']} pairs marked ({res['same']} same). Threshold {c['threshold']:.4f} ({res['rule']}): "
+                  f"weighted precision {c['precision_w']:.3f}, weighted recall {c['recall_w']:.3f} "
+                  f"(raw tp={c['tp']} fp={c['fp']} fn={c['fn']}). Collapses {res['collapsed_share']:.1%} of "
+                  f"{len(jobs)} open postings ({res['collapsed_share_exact_only']:.1%} from exact matches alone). "
+                  f"Wrote {out}.")
+    elif args.cmd == "dedupe":
+        from . import dedupe
+        t = args.threshold
+        if t is None:
+            t = (yaml.safe_load(Path(args.sources).read_text()).get("dedupe") or {}).get("threshold")
+        if t is None:
+            dedupe.write_clusters(con, {}, None)
+            print("dedupe threshold not set yet (pending hand-marked pairs); exact matches only")
+        else:
+            jobs = dedupe.load_jobs(con, open_only=False)
+            mapping = dedupe.cluster(jobs, dedupe.embed(jobs), t)
+            dedupe.write_clusters(con, mapping, t)
+            print(f"clustered {len(jobs)} postings at {t}: {dedupe.collapsed_share(mapping):.1%} collapsed")
     con.close()
 
 
