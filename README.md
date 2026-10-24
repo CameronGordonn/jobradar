@@ -74,14 +74,16 @@ Claude scoring goes through the Batch API at half price, and `eval-score` refuse
 - **dbt** (`warehouse/`):
   - staging: one model per source, normalized to a shared schema (title, company, location, URL, workplace type, dates, salary with currency and interval).
   - intermediate: `int_jobs` with a cleaned and normalized title, role family (regex rules in a seed), remote flag, posted date, yearly salary, open status and a dedupe cluster.
-  - marts: open postings with near-duplicates collapsed, daily postings per source, weekly postings by role family and company, per-run source health.
-  - tests: unique and not_null keys, accepted_values on every enum, relationships from the marts and clusters back to `int_jobs`, singular tests, a unit test on `int_jobs`, and source freshness (warn at 30 hours, error at 54).
-- **Data quality**: each run compares every source's row count with the median of its previous 7 runs and flags a drop below half, which usually means an API change. Flags go to `quality_checks`, show as warnings on the Actions run, and appear on the dashboard.
+  - snapshot: `snap_postings` keeps every version of each posting (title, location, salary, remote and open status), since the raw tables keep only the latest payload.
+  - marts: open postings with near-duplicates collapsed, daily postings per source, weekly postings by role family and company, per-run source health, closed postings with days listed, and per-posting edit counts from the snapshot.
+  - tests: unique and not_null keys, accepted_values on every enum, relationships from the marts and clusters back to `int_jobs`, singular tests, unit tests on `int_jobs` and the lifecycle mart, and source freshness (warn at 30 hours, error at 54). A pytest builds twice around a run with known edits and checks the snapshot counts exactly those.
+  - docs: `dbt docs generate --static` is published next to the dashboard at `/dbt/` (models, columns, tests, lineage).
+- **Data quality**: each run compares every source's row count with the median of its previous 7 runs and flags a drop below half, which usually means an API change. Flags go to `quality_checks`, show as warnings on the Actions run, open (or comment on) a GitHub issue labeled `data-quality`, and appear on the dashboard.
 - **Near-duplicates**: "ML Engineer" and "Machine Learning Engineer" at the same company are the same job. Postings are embedded as "title | company | location" and compared within a company. The threshold comes from 50 hand-marked pairs drawn across the similarity range (pending; until then only exact matches collapse).
-- **Schedule** (`.github/workflows/daily.yml`, daily at 14:17 UTC): restore the warehouse, ingest, quality checks, freshness, dbt build, dedupe, marts, dashboard to Pages. No Claude calls.
-- **CI** (`.github/workflows/tests.yml`, every push): pytest, and dbt build plus freshness against a committed synthetic fixture (eight daily runs of made-up companies, with a simulated outage the quality monitor must catch).
+- **Schedule** (`.github/workflows/daily.yml`, daily at 14:17 UTC): restore the warehouse, ingest, quality checks and alerts, freshness, dbt build, dedupe, marts, dashboard and dbt docs to Pages, and a weekly Parquet backup. No Claude calls.
+- **CI** (`.github/workflows/tests.yml`, every push): ruff and sqlfluff; pytest; dbt build, freshness, docs and the two-build snapshot test against a committed synthetic fixture (eight daily runs of made-up companies, with a simulated outage the quality monitor must catch).
 
-**Where the warehouse lives between runs.** The DuckDB file (about 16 MB) is uploaded as an Actions artifact at the end of each run and downloaded at the start of the next. Artifacts are kept 90 days, the maximum for a public repository, so the history survives up to 90 days without a successful run. An Actions cache would be simpler to restore but is evicted after 7 days without use and can go sooner when the repository's 10 GB cache fills, so one quiet week would lose everything. The job refuses to start from an empty file when an earlier successful run exists, so a failed download stops the run instead of resetting the history. GitHub also pauses scheduled workflows in a public repository after 60 days without commits; re-enabling it within the 90 days keeps the chain.
+**Where the warehouse lives between runs.** The DuckDB file (about 16 MB) is uploaded as an Actions artifact at the end of each run and downloaded at the start of the next. Artifacts are kept 90 days, the maximum for a public repository. An Actions cache would be simpler to restore but is evicted after 7 days without use and can go sooner when the repository's 10 GB cache fills, so one quiet week would lose everything. As a second copy, once a week the job publishes the raw tables, run logs, clusters and snapshot history as Parquet in a GitHub Release (about 7 MB). Releases don't expire, so if the artifact is ever gone the next run restores from the latest release and loses at most a week. With neither available, the job stops rather than start over from an empty file. GitHub also pauses scheduled workflows in a public repository after 60 days without commits; re-enabling it brings the chain back from the artifact or the latest release.
 
 ## Setup (ranking pipeline)
 
@@ -99,12 +101,12 @@ To build the warehouse locally: `pip install -r requirements-pipeline.txt`, then
 
 ## Tests
 
-`python -m pytest -q` runs offline on recorded and synthetic fixtures: adapters, filters, idempotent raw loads, the SQLite migration, label sampling and blindness, the relabel lock, metrics (checked against brute force over tie orders), the eval report's privacy, the quality monitor, dedupe and the dashboard export. `cd warehouse && dbt build` runs the warehouse tests.
+`python -m pytest -q` runs offline on recorded and synthetic fixtures: adapters, filters, idempotent raw loads, the SQLite and key migrations, one Claude call per duplicate group, label sampling and blindness, the relabel lock, metrics (checked against brute force over tie orders), the eval report's privacy, the quality monitor, dedupe, Parquet backup and restore, and the dashboard export. With dbt installed it also builds the warehouse twice to test the snapshot. `cd warehouse && dbt build` runs the warehouse tests; `ruff check .` and `sqlfluff lint models tests` (in `warehouse/`) run the linters.
 
 ## Known limitations
 
 - The dashboard covers the queries in `sources.yaml` and 24 hand-picked boards, not the job market.
-- "Postings by week first published" only sees postings that were still open at the first ingest, so earlier weeks are undercounted until the pipeline has run for a while.
+- "Postings by week first published" only sees postings that were still open at the first ingest, so earlier weeks are undercounted until the pipeline has run for a while. "Days listed" has the opposite bias early on: long-listed postings are more likely to be caught, so early medians run high.
 - USAJOBS searches return the last 14 days of announcements, and USAJOBS dates have no time zone (US Eastern, stored as given).
 - Role families come from title rules. About 8% of open postings match no rule and count as "other".
 - TF-IDF weights shift as the corpus grows, so recall scores aren't comparable across weeks. The eval uses scores frozen when the label sets were drawn.
