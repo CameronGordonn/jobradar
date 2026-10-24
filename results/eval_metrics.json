@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-24T05:15:22+00:00",
+  "generated_at": "2026-10-24T05:44:16+00:00",
   "command": "python -m jobradar.cli eval --report",
   "snapshot": {
     "snapshot_id": "s20261024T045553",
@@ -35,7 +35,38 @@
       "excluded": []
     }
   },
-  "production_cost": {},
+  "production_cost": {
+    "claude-haiku-4-5-20251001": {
+      "calls_measured": 2,
+      "mean_input_tokens": 7358.0,
+      "mean_output_tokens": 304.5,
+      "system_tokens": 5118,
+      "min_cacheable": 4096,
+      "system_caches": true,
+      "top_k": 40,
+      "usd_per_run": 0.1768577
+    },
+    "claude-haiku-5-5": {
+      "calls_measured": 2,
+      "mean_input_tokens": 10211.5,
+      "mean_output_tokens": 1389.5,
+      "system_tokens": 7237,
+      "min_cacheable": 512,
+      "system_caches": true,
+      "top_k": 40,
+      "usd_per_run": 0.043415054999999994
+    },
+    "claude-sonnet-5-5": {
+      "calls_measured": 2,
+      "mean_input_tokens": 10211.5,
+      "mean_output_tokens": 631.0,
+      "system_tokens": 7237,
+      "min_cacheable": 512,
+      "system_caches": true,
+      "top_k": 40,
+      "usd_per_run": 0.5649010999999999
+    }
+  },
   "stability": {},
   "stage0_audit": {
     "sampled": 30,
@@ -97,7 +128,11 @@
     "reason": "0/40 of set c relabeled; set c opens 7 days after set a is fully labeled"
   },
   "api_spend": {
-    "total_usd": 0,
-    "by_model": {}
+    "total_usd": 0.06024518,
+    "by_model": {
+      "claude-haiku-4-5-20251001": 0.0141145,
+      "claude-haiku-5-5": 0.0029190799999999997,
+      "claude-sonnet-5-5": 0.0432116
+    }
   }
 }

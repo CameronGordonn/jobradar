@@ -25,7 +25,13 @@ Pending: 0 postings in set a labeled, 0 positive; need both positive and negativ
 
 ## Cost per daily run
 
-Pending: no Claude calls measured yet.
+One daily run sends the top 40 postings by recall to Claude, one call each, at standard prices. Computed from token counts measured on the eval calls.
+
+| Model | Calls measured | Mean input tokens | Mean output tokens | System prompt caches? | USD per run |
+|---|---|---|---|---|---|
+| claude-haiku-4-5-20251001 | 2 | 7358 | 304 | yes (5118 tokens, minimum 4096) | $0.177 |
+| claude-haiku-5-5 | 2 | 10212 | 1390 | yes (7237 tokens, minimum 512) | $0.043 |
+| claude-sonnet-5-5 | 2 | 10212 | 631 | yes (7237 tokens, minimum 512) | $0.565 |
 
 ## LLM stability
 
@@ -47,7 +53,7 @@ Pending: 0/40 of set c relabeled; set c opens 7 days after set a is fully labele
 
 ## API spend
 
-Total spent on eval calls: $0.00.
+Total spent on eval calls: $0.06; claude-haiku-4-5-20251001 $0.01; claude-haiku-5-5 $0.00; claude-sonnet-5-5 $0.04.
 
 ## Reproduce
 
