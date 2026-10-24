@@ -48,19 +48,19 @@ On Windows with WSL, use Task Scheduler instead, because WSL's cron only runs wh
 ## Calibrate before you trust it
 
 ```bash
-python -m jobradar.cli ingest                              # a few days of data first
-python -m jobradar.cli label -n 50                         # stratified across the recall distribution
-python -m jobradar.cli label -n 20 --include-filtered      # checks whether stage 0 is too aggressive
+python -m jobradar.cli ingest            # a few days of data first
+python -m jobradar.cli label-sample      # draws the frozen label sets, once
+python -m jobradar.cli label --set a,b   # blind: no scores, ranks or filter reasons shown
+python -m jobradar.cli label-status
 python -m jobradar.cli eval
 ```
 
-`eval` reports:
-- **Filter false negatives**: jobs you'd apply to that the hard filters dropped. Any here means a rule is too tight.
-- **Recall AUC**: whether stage 1 ranks your positives above negatives. If it's weak, switch `recall.backend` to `embeddings` and rerun.
-- **Rerank AUC, precision/recall of "apply"**: whether Claude agrees with you. Edit the rubric where it disagrees, then re-eval. Try `claude-sonnet-5-5` against Haiku on the same labels and see if the difference justifies the cost.
-- **Positives below the top-k cutoff**: good jobs that would never reach Claude. If nonzero, raise `top_k`.
+The label sets are drawn once and stored, with the posting text, in `data/labels.duckdb` (gitignored):
+- **a**: 200 postings that passed the hard filters, 20 from each stage 1 recall decile. If you only label what the pipeline shows you, every metric looks great and tells you nothing.
+- **b**: 30 postings the hard filters dropped, stratified by rule. Any you'd apply to means a rule is too tight.
+- **c**: 40 postings from a, relabeled 7 or more days after a is finished. Your agreement with yourself is the ceiling for any ranker.
 
-The labeling sample is stratified on purpose. If you only label what the pipeline shows you, every metric looks great and tells you nothing.
+Labels are apply, maybe or no, with an optional note.
 
 ## Known limitations
 

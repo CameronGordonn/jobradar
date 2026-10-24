@@ -6,7 +6,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from jobradar import cli, db, filters
+from jobradar import cli, db, filters, labeling
+from jobradar.models import Job
 from jobradar.sources import ashby, greenhouse, lever, usajobs
 
 FIX = Path(__file__).parent / "fixtures"
@@ -142,7 +143,7 @@ def test_dedupe_across_runs(cfg, monkeypatch):
     assert con.scalar("SELECT COUNT(*) FROM jobs") == n1
 
 
-def test_end_to_end(cfg, monkeypatch):
+def test_end_to_end(cfg, monkeypatch, capsys):
     patch_sources(monkeypatch)
     con = db.connect(cfg["db_path"])
     cli.cmd_ingest(cfg, con)
@@ -160,12 +161,22 @@ def test_end_to_end(cfg, monkeypatch):
     assert "Grid Operations" not in text  # fit 3, below min_fit
     assert cli.digest.write(con, cfg["digest"]) is None  # already digested
 
-    # eval with hand labels
-    keys = {r["title"]: r["key"] for r in con.query("SELECT key, title FROM jobs")}
-    for t, lab in [("Machine Learning Engineer, Computer Vision", 1), ("Data Analyst, Grid Operations", 0),
-                   ("Physical Scientist (Remote Sensing)", 1), ("Senior Staff Software Engineer", 1)]:
-        con.execute("INSERT INTO labels VALUES (?,?,?)", (keys[t], lab, db.now()))
+    # eval reads the frozen label sets; build tiny ones by hand
+    lab = labeling.connect(cfg["labels_db_path"])
+    for t, label, set_name in [("Machine Learning Engineer, Computer Vision", "apply", "a"),
+                               ("Data Analyst, Grid Operations", "no", "a"),
+                               ("Physical Scientist (Remote Sensing)", "apply", "a"),
+                               ("Senior Staff Software Engineer", "apply", "b")]:
+        r = con.query("SELECT * FROM jobs WHERE title=?", (t,))[0]
+        lab.insert_rows("label_items", [(set_name, 0, "s", r["key"], r["source"], r["source_id"], r["title"],
+                                         r["org"], r["location"], r["url"], r["description"], r["extra"],
+                                         r["filter_reason"], r["recall"], "x", 1.0)])
+        lab.execute("INSERT INTO labels VALUES (?,?,?,?,?,?,?)",
+                    (set_name, r["source"], r["source_id"], r["key"], label, None, db.utcnow()))
     cli.cmd_eval(cfg, con, SimpleNamespace(), client=fake)
+    out = capsys.readouterr().out
+    assert "Senior Staff Software Engineer" in out and "Recall stage AUC" in out
+    assert fake.n == len(passing)  # eval never calls Claude
 
 
 def test_usajobs_multiple_locations_expanded(cfg):

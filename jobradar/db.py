@@ -7,6 +7,8 @@ jobs          parsed postings after stage 0, deduped across sources on org + tit
               location. The ranking stages read this.
 scores        stage 2 output. digested: what has already gone out in a digest.
 ingest_runs   rows fetched and new per source per run, for the data quality monitor.
+
+Hand labels live in a separate file; see labeling.py.
 """
 from __future__ import annotations
 
@@ -49,11 +51,6 @@ CREATE TABLE IF NOT EXISTS scores (
     key VARCHAR PRIMARY KEY,
     fit INTEGER, recommend VARCHAR, variant VARCHAR, evidence VARCHAR,
     gaps VARCHAR, dealbreakers VARCHAR, pitch VARCHAR, model VARCHAR, scored_at VARCHAR
-);
-CREATE TABLE IF NOT EXISTS labels (
-    key VARCHAR PRIMARY KEY,
-    label INTEGER,                 -- 1 = would apply, 0 = would skip
-    labeled_at VARCHAR
 );
 CREATE TABLE IF NOT EXISTS digested (
     key VARCHAR PRIMARY KEY,
@@ -131,11 +128,16 @@ def connect(path: str | Path) -> DB:
 
 
 def migrate_sqlite(con: DB, sqlite_path: str | Path) -> dict:
-    """One-time copy of jobs, scores, labels and digests from the old SQLite store.
-    The SQLite file is left in place."""
+    """One-time copy of jobs, scores and digests from the old SQLite store.
+    The SQLite file is left in place. Its binary labels are not carried over (labels
+    are now apply/maybe/no on frozen sets), so a warning says how many there were."""
     src = sqlite3.connect(sqlite_path)
     counts = {}
-    for table in ("jobs", "scores", "labels", "digested"):
+    old_labels = src.execute("SELECT COUNT(*) FROM labels").fetchone()[0] if src.execute(
+        "SELECT 1 FROM sqlite_master WHERE name='labels'").fetchone() else 0
+    if old_labels:
+        log.warning("%d old binary labels in %s were not migrated", old_labels, sqlite_path)
+    for table in ("jobs", "scores", "digested"):
         cur = src.execute(f"SELECT * FROM {table}")
         cols = [d[0] for d in cur.description]
         rows = cur.fetchall()

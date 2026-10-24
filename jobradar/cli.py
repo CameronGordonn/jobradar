@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import argparse
 import logging
-import random
 import sys
 import uuid
 from pathlib import Path
 
 import yaml
 
-from . import db, digest, filters, recall, rerank
+from . import db, digest, filters, labeling, recall, rerank
 from .db import row_to_job
 from .sources import ashby, greenhouse, lever, usajobs
 
@@ -137,87 +136,55 @@ def cmd_run(cfg, con, args=None):
 
 # ---------- calibration ----------
 
-def cmd_label(cfg, con, args):
-    """Stratified sample across the recall distribution, so you label jobs the
-    pipeline would never show you, not just its favorites. That's what makes
-    `eval` measure the pipeline instead of flattering it."""
-    where = "" if args.include_filtered else "WHERE j.filter_reason IS NULL"
-    rows = con.query(
-        f"""SELECT j.* FROM jobs j LEFT JOIN labels l ON l.key = j.key
-            {where} {'AND' if where else 'WHERE'} l.key IS NULL
-            ORDER BY COALESCE(j.recall, 0)""")
-    if not rows:
-        print("Nothing left to label.")
-        return
-    n = min(args.n, len(rows))
-    bins = [rows[i * len(rows) // n:(i + 1) * len(rows) // n] for i in range(n)]
-    sample = [random.choice(b) for b in bins if b]
-    random.shuffle(sample)
+def cmd_label_sample(cfg, con, args):
+    """Draw the frozen label sets once. Recall is refreshed first so the deciles match today's pool."""
+    _update_recall(cfg, con)
+    lab = labeling.connect(cfg["labels_db_path"])
+    n = labeling.create_sets(con, lab, args.seed, cfg.get("recall", {}).get("backend", "tfidf"))
+    print(f"Drew label sets from {n['pool']} postings that passed stage 0: "
+          f"a={n['a']}, b={n['b']}, c={n['c']} (c stays locked until 7 days after a is done).")
 
-    for i, r in enumerate(sample, 1):
-        print("\n" + "=" * 80)
-        print(f"[{i}/{len(sample)}] {r['title']} | {r['org']} | {r['location']}")
-        print(r["url"])
-        if r["filter_reason"]:
-            print(f"(filtered: {r['filter_reason']})")
-        print("-" * 80)
-        print((r["description"] or "")[:1500])
-        ans = input("\nWould you apply? [y]es / [n]o / [s]kip / [q]uit: ").strip().lower()
-        if ans == "q":
-            break
-        if ans in ("y", "n"):
-            con.execute("INSERT OR REPLACE INTO labels (key, label, labeled_at) VALUES (?,?,?)",
-                        (r["key"], int(ans == "y"), db.now()))
+
+def cmd_label(cfg, con, args):
+    """Blind labeling: title, company, location, excerpt and link only."""
+    lab = labeling.connect(cfg["labels_db_path"])
+    sets = args.set.split(",") if args.set else (["a", "b"] if args.include_filtered else ["a"])
+    labeling.label_loop(lab, sets, args.n)
+
+
+def cmd_label_status(cfg, con, args):
+    print("\n".join(labeling.status(labeling.connect(cfg["labels_db_path"]))))
 
 
 def cmd_eval(cfg, con, args, client=None):
+    """Quick check on whatever is labeled so far. Spends nothing: postings without a cached
+    Claude score are left out of the rerank line."""
     from sklearn.metrics import roc_auc_score
 
-    # Filter-stage false negatives: jobs you'd apply to that stage 0 threw away.
-    fn = con.query("""SELECT j.title, j.org, j.filter_reason FROM labels l JOIN jobs j ON j.key=l.key
-                      WHERE l.label=1 AND j.filter_reason IS NOT NULL""")
-
-    # Make sure every labeled, unfiltered job has a Claude score (costs one call each).
-    missing = con.query("""SELECT j.* FROM labels l JOIN jobs j ON j.key=l.key
-                           LEFT JOIN scores s ON s.key=j.key
-                           WHERE j.filter_reason IS NULL AND s.key IS NULL""")
-    if missing:
-        log.info("eval: scoring %d labeled jobs that were never reranked", len(missing))
-        _rerank_rows(cfg, con, missing, client)
-
-    rows = con.query("""SELECT l.label, j.recall, s.fit, s.recommend FROM labels l
-                        JOIN jobs j ON j.key=l.key JOIN scores s ON s.key=j.key
-                        WHERE j.filter_reason IS NULL""")
-    y = [r["label"] for r in rows]
-    print(f"\nLabeled & unfiltered: {len(rows)}  (positives: {sum(y)})")
+    lab = labeling.connect(cfg["labels_db_path"])
+    rows = lab.query("""SELECT i.set_name, i.job_key, i.title, i.org, i.filter_reason, i.recall, l.label
+                        FROM labels l JOIN label_items i USING (set_name, source, source_id)
+                        WHERE l.set_name IN ('a', 'b')""")
+    fn = [r for r in rows if r["set_name"] == "b" and r["label"] == "apply"]
+    a = [r for r in rows if r["set_name"] == "a"]
+    y = [int(r["label"] == "apply") for r in a]
+    print(f"\nSet a labeled: {len(a)}  (apply: {sum(y)})")
     if fn:
         print(f"\nFilter false negatives ({len(fn)}): loosen these rules")
         for r in fn:
             print(f"  - {r['title']} | {r['org']}  [{r['filter_reason']}]")
     if len(set(y)) < 2:
-        print("Need both positive and negative labels for AUC. Label more.")
+        print("Need both apply and non-apply labels for AUC. Label more.")
         return
+    print(f"Recall stage AUC (frozen scores): {roc_auc_score(y, [r['recall'] for r in a]):.3f}")
 
-    print(f"\nRecall stage AUC ({cfg.get('recall', {}).get('backend', 'tfidf')}): "
-          f"{roc_auc_score(y, [r['recall'] or 0 for r in rows]):.3f}")
-    print(f"Rerank fit-score AUC:   {roc_auc_score(y, [r['fit'] for r in rows]):.3f}")
-
-    pred = [r["recommend"] == "apply" for r in rows]
-    tp = sum(p and t for p, t in zip(pred, y))
-    fp = sum(p and not t for p, t in zip(pred, y))
-    fn_ = sum((not p) and t for p, t in zip(pred, y))
-    prec = tp / (tp + fp) if tp + fp else float("nan")
-    rec = tp / (tp + fn_) if tp + fn_ else float("nan")
-    print(f"'apply' recommendation: precision {prec:.2f}, recall {rec:.2f}  (tp={tp} fp={fp} fn={fn_})")
-
-    top_k = cfg.get("recall", {}).get("top_k", 40)
-    n_pass = con.scalar("SELECT COUNT(*) FROM jobs WHERE filter_reason IS NULL")
-    if n_pass:
-        cutoff = con.scalar("""SELECT recall FROM jobs WHERE filter_reason IS NULL
-                               ORDER BY recall DESC LIMIT 1 OFFSET ?""", (min(top_k, n_pass) - 1,))
-        lost = sum(1 for r in rows if r["label"] == 1 and (r["recall"] or 0) < cutoff)
-        print(f"Positives below today's top-{top_k} recall cutoff: {lost}/{sum(y)} "
-              f"(these would never reach Claude in a single batch)")
+    scores = {r["key"]: r["fit"] for r in con.query("SELECT key, fit FROM scores")}
+    scored = [(t, scores[r["job_key"]]) for t, r in zip(y, a) if r["job_key"] in scores]
+    if len({t for t, _ in scored}) == 2:
+        print(f"Rerank fit-score AUC (cached scores only, n={len(scored)}): "
+              f"{roc_auc_score([t for t, _ in scored], [f for _, f in scored]):.3f}")
+    else:
+        print(f"Rerank: {len(scored)} labeled postings have cached scores; not enough for AUC.")
 
 
 def cmd_probe(cfg, con, args):
@@ -237,10 +204,14 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("ingest", "score", "digest", "run", "eval"):
         sub.add_parser(name)
-    lp = sub.add_parser("label")
-    lp.add_argument("-n", type=int, default=30)
+    sp = sub.add_parser("label-sample", help="draw the frozen label sets a, b, c (once)")
+    sp.add_argument("--seed", type=int, default=20261023)
+    lp = sub.add_parser("label", help="blind labeling of a frozen set")
+    lp.add_argument("--set", help="comma-separated: a, b, a,b or c (default a)")
+    lp.add_argument("-n", type=int, default=None, help="stop after this many labels")
     lp.add_argument("--include-filtered", action="store_true",
-                    help="also sample filtered-out jobs, to catch over-aggressive filters")
+                    help="same as --set a,b: mix in postings stage 0 dropped")
+    sub.add_parser("label-status")
     pp = sub.add_parser("probe", help="check a job board token before adding it to config.yaml")
     pp.add_argument("source", choices=sorted(BOARDS))
     pp.add_argument("token")
@@ -250,9 +221,12 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
     cfg = load_config(args.config)
-    con = db.connect(cfg["db_path"])
+    # Labeling only touches the labels file, so a long session never holds the main DB's
+    # write lock (DuckDB allows one writer) while the daily run needs it.
+    con = None if args.cmd in ("label", "label-status") else db.connect(cfg["db_path"])
     {"ingest": cmd_ingest, "score": cmd_score, "digest": cmd_digest, "run": cmd_run,
-     "label": cmd_label, "eval": cmd_eval, "probe": cmd_probe, "probe-greenhouse": cmd_probe}[args.cmd](cfg, con, args)
+     "label": cmd_label, "label-sample": cmd_label_sample, "label-status": cmd_label_status,
+     "eval": cmd_eval, "probe": cmd_probe, "probe-greenhouse": cmd_probe}[args.cmd](cfg, con, args)
 
 
 if __name__ == "__main__":
