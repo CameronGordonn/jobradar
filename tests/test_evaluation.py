@@ -158,6 +158,11 @@ def test_report_end_to_end_and_private_data_stays_private(world, tmp_path):
     assert m["stability"]["claude-sonnet-5-5"]["spearman"] == pytest.approx(1.0)  # the fake is deterministic
     assert m["stage0_audit"]["labeled"] == 30
     assert m["self_agreement"]["status"] == "pending"
+    ag = m["ranker_agreement"]
+    assert ag["status"] == "ok" and ag["n"] == 200
+    assert ag["spearman"]["claude:claude-haiku-4-5-20251001 | claude:claude-sonnet-5-5"] == pytest.approx(1.0)
+    c = ag["claude_apply_below_cutoff"]["claude-sonnet-5-5"]
+    assert c["scored"] == 200 and 0 <= c["tfidf"] <= c["apply"]
     # Haiku 4.5 needs 4096 tokens to cache; the fake system prompt is 5000, so it caches.
     assert m["production_cost"]["claude-haiku-4-5-20251001"]["system_caches"] is True
     assert (out / "precision_at_k.png").stat().st_size > 10_000

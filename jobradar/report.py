@@ -176,6 +176,42 @@ def self_agreement(lab: DB) -> dict:
             "kappa_apply": ev.cohen_kappa([str(x) for x in bin_a], [str(x) for x in bin_c])}
 
 
+def agreement(lab: DB, top_k: int) -> dict:
+    """Needs no labels. How alike the rankers order set a, and how many postings each Claude
+    model recommends "apply" that stage 1 ranks below its top_k cutoff across the whole pool
+    (in a single batch those would never reach Claude)."""
+    scores = ranker_scores(lab)
+    keys = [r["job_key"] for r in items_for_set_a(lab)]
+    names = [m for m in RANKER_NAMES if m in scores and sum(k in scores[m] for k in keys) >= 0.95 * len(keys)]
+    common = [k for k in keys if all(k in scores[m] for m in names)]
+    out = {"n": len(common), "spearman": {}, "claude_apply_below_cutoff": {}}
+    if len(common) < 10:
+        return {"status": "pending", "reason": "fewer than 10 set a postings scored by every ranker"}
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            out["spearman"][f"{a} | {b}"] = ev.spearman([scores[a][k] for k in common], [scores[b][k] for k in common])
+    ranks = {}
+    for m in ("tfidf", "emb:bge-small", "emb:minilm"):
+        if m in scores:
+            order = sorted(scores[m], key=lambda k: -scores[m][k])
+            ranks[m] = {k: i + 1 for i, k in enumerate(order)}
+    for model in [r["model"] for r in lab.query("SELECT DISTINCT model FROM eval_scores WHERE run=1 ORDER BY 1")]:
+        picks = [r["job_key"] for r in lab.query(
+            "SELECT job_key FROM eval_scores WHERE model=? AND run=1 AND recommend='apply'", (model,))]
+        scored = lab.scalar("SELECT COUNT(*) FROM eval_scores WHERE model=? AND run=1", (model,))
+        out["claude_apply_below_cutoff"][model] = {
+            "scored": scored, "apply": len(picks),
+            **{m: sum(r.get(k, 10**9) > top_k for k in picks) for m, r in ranks.items()}}
+    out["status"] = "ok"
+    out["top_k"] = top_k
+    out["pool"] = lab.scalar("SELECT COUNT(*) FROM pool")
+    return out
+
+
+def items_for_set_a(lab: DB) -> list[dict]:
+    return lab.query("SELECT job_key FROM label_items WHERE set_name='a' ORDER BY job_key")
+
+
 def spend(lab: DB) -> dict:
     by = {r["model"]: float(r["usd"]) for r in lab.query(
         """SELECT model, SUM(cost_usd) usd FROM (SELECT model, cost_usd FROM eval_scores
@@ -266,6 +302,7 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
     s0, s0_rows = stage0_audit(lab)
     tk, tk_rows = topk_audit(lab, main, top_k)
     sa = self_agreement(lab)
+    ag = agreement(lab, top_k)
     sp = spend(lab)
     fig_ok = figure(results["apply"], out_dir / "precision_at_k.png")
 
@@ -273,7 +310,7 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
                "snapshot": {k: (str(v) if k == "created_at" else v) for k, v in snap.items()},
                "label_counts": {k: {"items": n, "labeled": d} for k, (n, d) in counts.items()},
                "comparison": results, "production_cost": costs, "stability": stab, "stage0_audit": s0,
-               "topk_audit": tk, "self_agreement": sa, "api_spend": sp}
+               "topk_audit": tk, "self_agreement": sa, "ranker_agreement": ag, "api_spend": sp}
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "eval_metrics.json").write_text(json.dumps(metrics, indent=2, default=str))
 
@@ -347,6 +384,25 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
                   "so this depends on timing as well as rank)."]
     else:
         L.append(f"Pending: {tk['reason']}.")
+    L += ["", "## Ranker agreement (no labels needed)", ""]
+    if ag["status"] == "ok":
+        L += [f"Spearman correlation of the scores each ranker gives the same {ag['n']} set a postings:", "",
+              "| Rankers | Spearman |", "|---|---|"]
+        for pair, rho in ag["spearman"].items():
+            a, b = pair.split(" | ")
+            L.append(f"| {_name(a)} vs {_name(b)} | {rho:.3f} |")
+        if ag["claude_apply_below_cutoff"]:
+            L += ["", f"Postings each Claude model recommends \"apply\" that a recall ranker puts below its top "
+                  f"{ag['top_k']} across the whole pool of {ag['pool']} (in a single batch they would never reach Claude):", "",
+                  "| Model | Scored | Apply | Below TF-IDF top-k | Below bge-small top-k | Below MiniLM top-k |",
+                  "|---|---|---|---|---|---|"]
+            for m, c in ag["claude_apply_below_cutoff"].items():
+                L.append(f"| {m} | {c['scored']} | {c['apply']} | {c.get('tfidf', 'n/a')} | "
+                         f"{c.get('emb:bge-small', 'n/a')} | {c.get('emb:minilm', 'n/a')} |")
+            L += ["", "This compares rankers with each other, not with the labels: it shows how much the recall stage "
+                  "and the reranker disagree, not which one is right."]
+    else:
+        L.append(f"Pending: {ag['reason']}.")
     L += ["", "## Self-agreement ceiling", ""]
     if sa["status"] == "ok":
         L.append(f"On {sa['n']} postings relabeled 7+ days later: {sa['agreement_3class']:.0%} identical labels "
