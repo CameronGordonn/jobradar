@@ -135,7 +135,8 @@ def stage0_audit(lab: DB) -> tuple[dict, list[dict]]:
 
 
 def topk_audit(lab: DB, main: DB | None, top_k: int) -> tuple[dict, list[dict]]:
-    pos = lab.query("""SELECT i.job_key, i.title, i.org FROM labels l JOIN label_items i USING (set_name, source, source_id)
+    pos = lab.query("""SELECT i.job_key, i.source, i.source_id, i.title, i.org FROM labels l
+                       JOIN label_items i USING (set_name, source, source_id)
                        WHERE l.set_name='a' AND l.label='apply'""")
     if not pos:
         return {"status": "pending", "reason": "no apply labels in set a yet"}, []
@@ -153,8 +154,9 @@ def topk_audit(lab: DB, main: DB | None, top_k: int) -> tuple[dict, list[dict]]:
         if m == "tfidf":
             lost = [dict(p, rank=rank.get(p["job_key"])) for p in below]
     if main is not None:
-        scored = {r["key"] for r in main.query("SELECT key FROM scores")}
-        out["reached_claude_in_daily_runs"] = sum(p["job_key"] in scored for p in pos)
+        scored = {(r["source"], r["source_id"]) for r in
+                  main.query("SELECT j.source, j.source_id FROM scores s JOIN jobs j USING (key)")}
+        out["reached_claude_in_daily_runs"] = sum((p["source"], p["source_id"]) in scored for p in pos)
     return out, lost
 
 

@@ -104,9 +104,14 @@ def _rerank_rows(cfg, con, rows, client=None):
 def cmd_score(cfg, con, args=None, client=None):
     top_k = cfg.get("recall", {}).get("top_k", 40)
     min_recall = cfg.get("recall", {}).get("min_recall", 0.0)
+    # One call per dedupe group: skip a posting when another with the same org + title +
+    # location already has a score, and send only the best-recall member of a new group.
     rows = con.query(
         """SELECT j.* FROM jobs j LEFT JOIN scores s ON s.key = j.key
            WHERE j.filter_reason IS NULL AND s.key IS NULL AND COALESCE(j.recall, 0) >= ?
+             AND NOT EXISTS (SELECT 1 FROM jobs j2 JOIN scores s2 ON s2.key = j2.key
+                             WHERE j2.dedupe_key = j.dedupe_key)
+           QUALIFY row_number() OVER (PARTITION BY j.dedupe_key ORDER BY j.recall DESC, j.key) = 1
            ORDER BY j.recall DESC, j.key LIMIT ?""", (min_recall, top_k))
     n = _rerank_rows(cfg, con, rows, client)
     log.info("score: reranked %d jobs", n)
@@ -177,8 +182,11 @@ def cmd_eval(cfg, con, args, client=None):
         return
     print(f"Recall stage AUC (frozen scores): {roc_auc_score(y, [r['recall'] for r in a]):.3f}")
 
-    scores = {r["key"]: r["fit"] for r in con.query("SELECT key, fit FROM scores")}
-    scored = [(t, scores[r["job_key"]]) for t, r in zip(y, a) if r["job_key"] in scores]
+    scores = {(r["source"], r["source_id"]): r["fit"] for r in
+              con.query("SELECT j.source, j.source_id, s.fit FROM scores s JOIN jobs j USING (key)")}
+    ids = {r["job_key"]: (r["source"], r["source_id"]) for r in
+           lab.query("SELECT job_key, source, source_id FROM label_items WHERE set_name='a'")}
+    scored = [(t, scores[ids[r["job_key"]]]) for t, r in zip(y, a) if ids.get(r["job_key"]) in scores]
     if len({t for t, _ in scored}) == 2:
         print(f"Rerank fit-score AUC (cached scores only, n={len(scored)}): "
               f"{roc_auc_score([t for t, _ in scored], [f for _, f in scored]):.3f}")
@@ -207,7 +215,9 @@ def cmd_eval_score(cfg, con, args):
     lab = evaluation.init(labeling.connect(cfg["labels_db_path"]))
     model, run = args.model, args.run
     if run == 1 and not args.no_reuse:
-        n = evaluation.reuse_production_scores(lab, con, model, _prompt_changed_at(cfg))
+        main = db.connect(cfg["db_path"])
+        n = evaluation.reuse_production_scores(lab, main, model, _prompt_changed_at(cfg))
+        main.close()
         if n:
             print(f"Reused {n} daily-run scores from {model} made after the rubric and resumes last changed.")
     items = evaluation.pending_items(lab, model, run)[: args.limit or None]
@@ -293,7 +303,8 @@ def main(argv=None):
     cfg = load_config(args.config)
     # Labeling only touches the labels file, so a long session never holds the main DB's
     # write lock (DuckDB allows one writer) while the daily run needs it.
-    con = None if args.cmd in ("label", "label-status", "eval-embed") else db.connect(cfg["db_path"])
+    # eval-score opens the main DB itself, briefly, so a long batch doesn't hold its lock.
+    con = None if args.cmd in ("label", "label-status", "eval-embed", "eval-score") else db.connect(cfg["db_path"])
     {"ingest": cmd_ingest, "score": cmd_score, "digest": cmd_digest, "run": cmd_run,
      "label": cmd_label, "label-sample": cmd_label_sample, "label-status": cmd_label_status,
      "eval": cmd_eval, "eval-embed": cmd_eval_embed, "eval-score": cmd_eval_score, "probe": cmd_probe, "probe-greenhouse": cmd_probe}[args.cmd](cfg, con, args)

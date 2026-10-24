@@ -319,6 +319,42 @@ def test_migrates_legacy_sqlite(tmp_path):
     legacy.commit()
     legacy.close()
     con = db.connect(tmp_path / "jobradar.duckdb")
-    assert con.scalar("SELECT recall FROM jobs WHERE key='k1'") == 0.5
-    assert con.scalar("SELECT fit FROM scores") == 7
+    # Copied, then rekeyed on source id; the old hash survives as dedupe_key.
+    assert con.query("SELECT key, dedupe_key, recall FROM jobs") == [{"key": "lever:a:1", "dedupe_key": "k1", "recall": 0.5}]
+    assert con.query("SELECT key, fit FROM scores") == [{"key": "lever:a:1", "fit": 7}]
     assert (tmp_path / "jobradar.db").exists()  # left in place
+
+
+def test_rekey_merges_versions_and_moves_scores(tmp_path):
+    con = db.connect(tmp_path / "x.duckdb")
+    con.execute("""INSERT INTO jobs (key, source, source_id, title, org, location, last_seen) VALUES
+        ('h_old', 'greenhouse', 'b:1', 'TPU Kernel Engineer', 'A', 'SF', '2026-10-01'),
+        ('h_new', 'greenhouse', 'b:1', 'TPU Performance Engineer', 'A', 'SF', '2026-10-20'),
+        ('h_other', 'lever', 's:9', 'Analyst', 'B', 'NY', '2026-10-20')""")
+    con.execute("""INSERT INTO scores (key, fit, scored_at) VALUES ('h_old', 4, '2026-10-02'), ('h_new', 8, '2026-10-21')""")
+    con.execute("INSERT INTO digested VALUES ('h_old', '2026-10-02')")
+    assert db.migrate_job_keys(con) == 3
+    assert con.query("SELECT key, title, dedupe_key FROM jobs ORDER BY key") == [
+        {"key": "greenhouse:b:1", "title": "TPU Performance Engineer", "dedupe_key": "h_new"},
+        {"key": "lever:s:9", "title": "Analyst", "dedupe_key": "h_other"}]
+    assert con.query("SELECT key, fit FROM scores") == [{"key": "greenhouse:b:1", "fit": 8}]
+    assert con.query("SELECT key FROM digested") == [{"key": "greenhouse:b:1"}]
+    assert db.migrate_job_keys(con) == 0  # idempotent
+
+
+def test_edited_posting_updates_in_place_and_duplicates_score_once(cfg):
+    con = db.connect(cfg["db_path"])
+    a = Job("greenhouse", "b:1", "Data Scientist", "Org", "CA", "u", "computer vision models")
+    dup = Job("lever", "s:2", "Data Scientist", "Org", "CA", "u2", "computer vision models")  # same org/title/location
+    db.upsert_jobs(con, [(a, None), (dup, None)])
+    db.set_recall(con, [(a.key, 0.9), (dup.key, 0.8)])
+    fake = FakeClaude()
+    cli.cmd_score(cfg, con, client=fake)
+    assert fake.n == 1                                   # one call for the dedupe group
+    assert con.query("SELECT key FROM scores") == [{"key": a.key}]
+    cli.cmd_score(cfg, con, client=fake)
+    assert fake.n == 1                                   # the duplicate is never sent later either
+    edited = Job("greenhouse", "b:1", "Data Scientist II", "Org", "CA", "u", "computer vision models")
+    db.upsert_jobs(con, [(edited, None)])
+    assert con.query("SELECT title FROM jobs WHERE key=?", (a.key,)) == [{"title": "Data Scientist II"}]
+    assert con.scalar("SELECT COUNT(*) FROM jobs") == 2

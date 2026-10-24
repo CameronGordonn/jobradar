@@ -24,8 +24,13 @@ class Job:
 
     @property
     def key(self) -> str:
-        """Cross-source dedupe key: same org + title + location collapses to one row,
-        even if the posting shows up on several boards."""
+        """Row identity: stable across edits to the title or location."""
+        return f"{self.source}:{self.source_id}"
+
+    @property
+    def dedupe_key(self) -> str:
+        """Same org + title + location, even on several boards or under several ids.
+        Only one posting per dedupe key is sent to Claude."""
         raw = "|".join(_norm(x) for x in (self.org, self.title, self.location))
         return hashlib.sha1(raw.encode()).hexdigest()[:16]
 

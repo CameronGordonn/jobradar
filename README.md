@@ -108,7 +108,6 @@ To build the warehouse locally: `pip install -r requirements-pipeline.txt`, then
 - USAJOBS searches return the last 14 days of announcements, and USAJOBS dates have no time zone (US Eastern, stored as given).
 - Role families come from title rules. About 8% of open postings match no rule and count as "other".
 - TF-IDF weights shift as the corpus grows, so recall scores aren't comparable across weeks. The eval uses scores frozen when the label sets were drawn.
-- The ranking pipeline dedupes on organization + title + location, so an edited title creates a second row. Label sampling keeps the latest version of each source job id.
 - Both embedding models truncate long postings (512 and 256 tokens).
 - One labeler. The eval measures how well the rankers match one person's judgment, bounded by that person's consistency.
 

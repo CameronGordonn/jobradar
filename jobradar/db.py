@@ -3,8 +3,9 @@
 raw_<source>  untouched API payloads, one row per source job id. A rerun updates rows
               in place, so loads are idempotent. ingested_at is the latest load and
               first_ingested_at the first, both UTC. dbt builds from these.
-jobs          parsed postings after stage 0, deduped across sources on org + title +
-              location. The ranking stages read this.
+jobs          parsed postings with their stage 0 result, one row per source job id
+              (key = "<source>:<source_id>"). dedupe_key groups the same org + title +
+              location so a duplicate is never sent to Claude twice. The ranking stages read this.
 scores        stage 2 output. digested: what has already gone out in a digest.
 ingest_runs   rows fetched and new per source per run, for the data quality monitor.
 
@@ -66,12 +67,13 @@ CREATE TABLE IF NOT EXISTS job_clusters (
 # Personal tables: the ranking pipeline's state. Never created in the public warehouse.
 APP_SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
-    key VARCHAR PRIMARY KEY,
+    key VARCHAR PRIMARY KEY,       -- "<source>:<source_id>"
     source VARCHAR, source_id VARCHAR, title VARCHAR, org VARCHAR, location VARCHAR, url VARCHAR,
     description VARCHAR, posted VARCHAR, closes VARCHAR, extra VARCHAR,
     filter_reason VARCHAR,         -- NULL means it passed hard filters
     recall DOUBLE,                 -- stage-1 similarity to best resume variant
-    first_seen VARCHAR, last_seen VARCHAR
+    first_seen VARCHAR, last_seen VARCHAR,
+    dedupe_key VARCHAR             -- hash of org + title + location
 );
 CREATE TABLE IF NOT EXISTS scores (
     key VARCHAR PRIMARY KEY,
@@ -86,7 +88,7 @@ CREATE TABLE IF NOT EXISTS digested (
 SCHEMA = WAREHOUSE_SCHEMA + APP_SCHEMA
 
 _JOB_COLS = ("key", "source", "source_id", "title", "org", "location", "url", "description",
-             "posted", "closes", "extra", "filter_reason", "first_seen", "last_seen")
+             "posted", "closes", "extra", "filter_reason", "first_seen", "last_seen", "dedupe_key")
 
 
 def now() -> str:
@@ -128,6 +130,10 @@ class DB:
             self.con.execute(f"INSERT INTO {table} VALUES " + ",".join([ph] * len(part)),
                              [v for r in part for v in r])
 
+    def reopen(self) -> None:
+        """Reconnect after close(), e.g. after releasing the write lock during a long wait."""
+        self.con = duckdb.connect(self.path)
+
     def commit(self) -> None:
         """DuckDB autocommits each statement; kept so callers read like before."""
 
@@ -147,7 +153,44 @@ def connect(path: str | Path, app_tables: bool = True) -> DB:
     legacy = p.with_suffix(".db")
     if fresh and legacy.exists() and legacy != p:
         migrate_sqlite(con, legacy)
+    migrate_job_keys(con)
     return con
+
+
+def migrate_job_keys(con: DB) -> int:
+    """Rekey jobs from the old org+title+location hash to "<source>:<source_id>". The hash
+    becomes dedupe_key. Where an edited posting left several rows for one source id, the
+    latest row wins; scores and digest marks move to the new key (latest score wins).
+    Old hash keys contain no ":", which is how old rows are recognized. Returns rows rekeyed."""
+    con.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS dedupe_key VARCHAR")
+    if not con.scalar("SELECT COUNT(*) FROM jobs WHERE key NOT LIKE '%:%'"):
+        return 0
+    n = con.scalar("SELECT COUNT(*) FROM jobs")
+    con.execute("BEGIN")
+    try:
+        con.execute("""CREATE TEMP TABLE _keymap AS SELECT key AS old_key, source || ':' || source_id AS new_key,
+                       last_seen FROM jobs""")
+        con.execute("""CREATE TEMP TABLE _jobs AS SELECT * REPLACE (source || ':' || source_id AS key,
+                       coalesce(dedupe_key, key) AS dedupe_key) FROM jobs
+                       QUALIFY row_number() OVER (PARTITION BY source, source_id ORDER BY last_seen DESC, key) = 1""")
+        con.execute("""CREATE TEMP TABLE _scores AS SELECT s.* REPLACE (m.new_key AS key) FROM scores s
+                       JOIN _keymap m ON m.old_key = s.key
+                       QUALIFY row_number() OVER (PARTITION BY m.new_key ORDER BY s.scored_at DESC) = 1""")
+        con.execute("""CREATE TEMP TABLE _digested AS SELECT d.* REPLACE (m.new_key AS key) FROM digested d
+                       JOIN _keymap m ON m.old_key = d.key
+                       QUALIFY row_number() OVER (PARTITION BY m.new_key ORDER BY d.digest_date) = 1""")
+        for t in ("jobs", "scores", "digested"):
+            con.execute(f"DELETE FROM {t}")
+            con.execute(f"INSERT INTO {t} BY NAME SELECT * FROM _{t}")
+            con.execute(f"DROP TABLE _{t}")
+        con.execute("DROP TABLE _keymap")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    after = con.scalar("SELECT COUNT(*) FROM jobs")
+    log.info("rekeyed jobs on source id: %d rows -> %d (older versions of edited postings merged)", n, after)
+    return n
 
 
 def migrate_sqlite(con: DB, sqlite_path: str | Path) -> dict:
@@ -203,13 +246,14 @@ def upsert_raw(con: DB, source: str, rows: list[tuple[str, str, str | None, dict
 
 
 def upsert_jobs(con: DB, items: list[tuple[Job, str | None]]) -> int:
-    """Insert or refresh parsed jobs with their stage 0 result. Returns how many keys are new."""
+    """Insert or refresh parsed jobs with their stage 0 result. Returns how many keys are new.
+    An edited posting updates its row in place, title and location included."""
     t = now()
     cols = ", ".join(f"{c} VARCHAR" for c in _JOB_COLS)
     con.execute(f"CREATE OR REPLACE TEMP TABLE _jobs_in (seq INTEGER, {cols})")
     con.insert_rows("_jobs_in", [
         (i, j.key, j.source, j.source_id, j.title, j.org, j.location, j.url, j.description,
-         j.posted, j.closes, json.dumps(j.extra), reason, t, t)
+         j.posted, j.closes, json.dumps(j.extra), reason, t, t, j.dedupe_key)
         for i, (j, reason) in enumerate(items)])
     new = con.scalar("SELECT COUNT(DISTINCT key) FROM _jobs_in WHERE key NOT IN (SELECT key FROM jobs)")
     names = ", ".join(_JOB_COLS)
@@ -217,8 +261,9 @@ def upsert_jobs(con: DB, items: list[tuple[Job, str | None]]) -> int:
         INSERT INTO jobs ({names})
         SELECT {names} FROM (SELECT * FROM _jobs_in QUALIFY row_number() OVER (PARTITION BY key ORDER BY seq DESC) = 1)
         ON CONFLICT (key) DO UPDATE SET
-            source = excluded.source, source_id = excluded.source_id, description = excluded.description, closes = excluded.closes, extra = excluded.extra,
-            filter_reason = excluded.filter_reason, last_seen = excluded.last_seen
+            title = excluded.title, org = excluded.org, location = excluded.location, url = excluded.url,
+            description = excluded.description, closes = excluded.closes, extra = excluded.extra,
+            filter_reason = excluded.filter_reason, last_seen = excluded.last_seen, dedupe_key = excluded.dedupe_key
     """)
     con.execute("DROP TABLE _jobs_in")
     return new

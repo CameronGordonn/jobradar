@@ -95,17 +95,20 @@ def total_spend(lab: DB) -> float:
 def reuse_production_scores(lab: DB, main: DB, model: str, prompt_changed_at) -> int:
     """Copy daily-run scores for set a postings when the same model scored them after the
     rubric and resumes last changed. These cost nothing now; their tokens weren't logged."""
-    rows = main.query("SELECT * FROM scores WHERE model=? AND scored_at >= ?",
-                      (model, prompt_changed_at.isoformat()))
-    have = {r["job_key"] for r in items_for_run(lab, 1)}
+    rows = main.query("""SELECT s.*, j.source, j.source_id FROM scores s JOIN jobs j USING (key)
+                         WHERE s.model=? AND s.scored_at >= ?""", (model, prompt_changed_at.isoformat()))
+    # Match on source id: the label sets keep the key the posting had when they were drawn.
+    have = {(r["source"], r["source_id"]): r["job_key"] for r in items_for_run(lab, 1)}
     done = {r["job_key"] for r in lab.query("SELECT job_key FROM eval_scores WHERE model=? AND run=1", (model,))}
     n = 0
     for r in rows:
-        if r["key"] in have and r["key"] not in done:
+        key = have.get((r["source"], r["source_id"]))
+        if key and key not in done:
             result = {"fit_score": r["fit"], "recommend": r["recommend"], "resume_variant": r["variant"],
                       "strongest_evidence": r["evidence"], "gaps": json.loads(r["gaps"] or "[]"),
                       "dealbreakers": json.loads(r["dealbreakers"] or "[]"), "pitch": r["pitch"]}
-            _save(lab, model, 1, r["key"], result, {}, 0.0, "production_cache")
+            _save(lab, model, 1, key, result, {}, 0.0, "production_cache")
+            done.add(key)
             n += 1
     return n
 
@@ -210,8 +213,12 @@ def score_batch(client, lab: DB, model: str, run: int, items: list[dict], system
         lab.execute("CREATE TABLE IF NOT EXISTS eval_batch_items (batch_id VARCHAR, custom_id VARCHAR, job_key VARCHAR)")
         lab.insert_rows("eval_batch_items", [(batch_id, cid, r["job_key"]) for cid, r in by_id.items()])
         log.info("submitted batch %s with %d requests", batch_id, len(reqs))
-    while client.messages.batches.retrieve(batch_id).processing_status != "ended":
-        time.sleep(poll_seconds)
+    lab.close()  # don't hold the labels file's write lock while waiting; labeling can go on
+    try:
+        while client.messages.batches.retrieve(batch_id).processing_status != "ended":
+            time.sleep(poll_seconds)
+    finally:
+        lab.reopen()
     keys = {r["custom_id"]: r["job_key"] for r in
             lab.query("SELECT custom_id, job_key FROM eval_batch_items WHERE batch_id=?", (batch_id,))}
     done = 0
