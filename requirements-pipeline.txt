@@ -1,0 +1,2 @@
+# The warehouse build (CI and the scheduled job). Pinned so a dbt release can't change a run silently.
+dbt-duckdb==1.11.0

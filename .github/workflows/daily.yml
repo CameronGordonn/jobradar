@@ -1,0 +1,120 @@
+name: daily pipeline
+
+# Ingest -> quality checks -> dbt build -> dedupe -> dashboard. Public data only:
+# this job never reads the personal config and makes no Claude calls.
+on:
+  schedule:
+    - cron: "17 14 * * *"   # 14:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read      # download the previous run's warehouse artifact
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+env:
+  JOBRADAR_WAREHOUSE: ${{ github.workspace }}/data/warehouse.duckdb
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Is a dedupe threshold set?
+        id: dedupe
+        run: echo "enabled=$(python -c "import yaml; print(str((yaml.safe_load(open('sources.yaml')).get('dedupe') or {}).get('threshold') is not None).lower())")" >> "$GITHUB_OUTPUT"
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt -r requirements-pipeline.txt
+          if [ "${{ steps.dedupe.outputs.enabled }}" = "true" ]; then
+            pip install torch --index-url https://download.pytorch.org/whl/cpu
+            pip install -r requirements-eval.txt
+          fi
+
+      - name: Cache the embedding model
+        if: steps.dedupe.outputs.enabled == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-bge-small-en-v1.5
+
+      # The warehouse lives in an artifact passed from run to run. If an earlier successful
+      # run exists but its artifact can't be fetched, stop: starting from an empty file would
+      # drop the history.
+      - name: Restore the warehouse from the last successful run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data
+          prev=$(gh run list --workflow daily.yml --status success --limit 1 --json databaseId -q '.[0].databaseId')
+          if [ -z "$prev" ]; then
+            echo "No earlier successful run: starting a new warehouse."
+          else
+            gh run download "$prev" --name warehouse --dir data || {
+              echo "::error::Run $prev succeeded but its warehouse artifact could not be downloaded (expired after 90 days?)."
+              exit 1
+            }
+          fi
+          ls -la data
+
+      - name: Ingest
+        env:
+          USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
+          USAJOBS_EMAIL: ${{ secrets.USAJOBS_EMAIL }}
+        run: python -m jobradar.pipeline --db data/warehouse.duckdb ingest
+
+      - name: Data quality checks (flags show as warnings on the run)
+        run: python -m jobradar.pipeline --db data/warehouse.duckdb quality
+
+      - name: Upload the warehouse (even if a later step fails, so the ingest isn't lost)
+        if: always() && hashFiles('data/warehouse.duckdb') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: warehouse
+          path: data/warehouse.duckdb
+          retention-days: 90
+
+      - name: dbt source freshness
+        working-directory: warehouse
+        run: dbt source freshness --profiles-dir .
+
+      - name: dbt build (staging and intermediate)
+        working-directory: warehouse
+        # marts+ = the marts and every test downstream of them; they build after the dedupe step
+        run: dbt build --profiles-dir . --exclude "marts+"
+
+      - name: Near-duplicate clusters
+        run: python -m jobradar.pipeline --db data/warehouse.duckdb dedupe
+
+      - name: dbt build (marts)
+        working-directory: warehouse
+        run: dbt build --profiles-dir . --select "marts+"
+
+      - name: Dashboard
+        run: python -m jobradar.pipeline --db data/warehouse.duckdb dashboard --out site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
