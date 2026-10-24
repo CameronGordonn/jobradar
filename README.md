@@ -1,6 +1,11 @@
 # jobradar
 
+[![tests](https://github.com/CameronGordonn/jobradar/actions/workflows/tests.yml/badge.svg)](https://github.com/CameronGordonn/jobradar/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Finds and ranks jobs across sources the big boards miss. It never applies or sends anything; it hands you a short daily list and you decide.
+
+The shipped config pulls from USAJOBS plus 24 company boards on Greenhouse, Lever and Ashby. Cheap filters and TF-IDF recall narrow the pool, Claude reranks at most 40 jobs per run against a written rubric, and the digest shows the top 10.
 
 ```
 sources ──> stage 0: hard filters ──> stage 1: recall (tfidf/embeddings) ──> stage 2: Claude rerank ──> digest
@@ -68,3 +73,7 @@ The labeling sample is stratified on purpose. If you only label what the pipelin
 - **Workday**: many utilities and large employers use it. Most tenants expose an undocumented JSON search endpoint behind the careers page (look in browser devtools, Network tab, for a POST to `.../wday/cxs/...`).
 - **NEOGOV / governmentjobs.com**: San Diego County, City of San Diego, and many CA agencies.
 - **CalCareers**: no API, needs a scraper. Remember that most state jobs require passing an exam to get on the eligibility list first, so pull the exam list too.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
