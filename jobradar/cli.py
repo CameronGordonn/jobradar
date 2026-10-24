@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from . import db, digest, filters, labeling, recall, rerank
+from . import db, digest, evaluation, filters, labeling, recall, rerank
 from .db import row_to_job
 from .sources import ashby, greenhouse, lever, usajobs
 
@@ -157,9 +157,19 @@ def cmd_label_status(cfg, con, args):
 
 
 def cmd_eval(cfg, con, args, client=None):
-    """Quick check on whatever is labeled so far. Spends nothing: postings without a cached
-    Claude score are left out of the rerank line."""
+    """Quick check on whatever is labeled so far, or with --report the full summary in results/.
+    Spends nothing: it only reads scores that already exist."""
     from sklearn.metrics import roc_auc_score
+
+    if getattr(args, "report", False):
+        from . import report
+        m = report.build(cfg, evaluation.init(labeling.connect(cfg["labels_db_path"])), con,
+                         Path(cfg["_base"]) / "results", Path(cfg["_base"]) / "data" / "eval_details.md",
+                         n_boot=args.n_boot)
+        print(f"Wrote results/eval_summary.md, results/eval_metrics.json"
+              f"{', results/precision_at_k.png' if (Path(cfg['_base']) / 'results/precision_at_k.png').exists() else ''}; "
+              f"private details in data/eval_details.md. Eval spend so far ${m['api_spend']['total_usd']:.2f}.")
+        return
 
     lab = labeling.connect(cfg["labels_db_path"])
     rows = lab.query("""SELECT i.set_name, i.job_key, i.title, i.org, i.filter_reason, i.recall, l.label
@@ -187,6 +197,64 @@ def cmd_eval(cfg, con, args, client=None):
         print(f"Rerank: {len(scored)} labeled postings have cached scores; not enough for AUC.")
 
 
+def _prompt_changed_at(cfg):
+    """Last change to anything in the system prompt: the rubric or a resume."""
+    from datetime import datetime, timezone
+    base = cfg["_base"]
+    paths = [base / cfg["rubric_path"]] + [base / v for v in cfg["resumes"].values()]
+    return datetime.fromtimestamp(max(p.stat().st_mtime for p in paths), timezone.utc).replace(tzinfo=None)
+
+
+def cmd_eval_embed(cfg, con, args):
+    lab = evaluation.init(labeling.connect(cfg["labels_db_path"]))
+    for name in args.models.split(","):
+        n = evaluation.embed_pool(lab, list(cfg["resume_texts"].values()), name)
+        print(f"emb:{name}: scored {n} pool postings")
+
+
+def cmd_eval_score(cfg, con, args):
+    """Score set a (run 1) or the stability subset (run 2) with a Claude model. Prints the
+    estimate and spends only with --yes, and never past the eval budget without --over-budget."""
+    lab = evaluation.init(labeling.connect(cfg["labels_db_path"]))
+    model, run = args.model, args.run
+    if run == 1 and not args.no_reuse:
+        n = evaluation.reuse_production_scores(lab, con, model, _prompt_changed_at(cfg))
+        if n:
+            print(f"Reused {n} daily-run scores from {model} made after the rubric and resumes last changed.")
+    items = evaluation.pending_items(lab, model, run)[: args.limit or None]
+    if not items:
+        print(f"Nothing left to score for {model} run {run}.")
+        return
+    client, system, tool = _client_and_prompt(cfg)
+    max_chars = cfg.get("rerank", {}).get("max_desc_chars", 8000)
+    est = evaluation.estimate(client, lab, model, items, system, tool, max_chars, batch=not args.sync)
+    spent = evaluation.total_spend(lab)
+    budget = cfg.get("eval", {}).get("budget_usd", evaluation.DEFAULT_BUDGET_USD)
+    print(f"{model} run {run}: {len(items)} calls via {'sync' if args.sync else 'batch (half price)'}; "
+          f"system prompt {est.system_tokens} tokens, mean request {est.mean_input_tokens:.0f} input tokens.")
+    if est.usd is None:
+        worst = len(items) * rerank.cost_usd(model, {"input_tokens": est.mean_input_tokens,
+                                                    "output_tokens": rerank.request_params(model, system, tool,
+                                                        evaluation.item_job(items[0]), 10)["max_tokens"]},
+                                            batch=not args.sync)
+        print(f"Output length not measured yet. Upper bound if every reply hit max_tokens: ${worst:.2f}. "
+              "Run a small pilot first (--sync --limit 2) to measure it.")
+        cost = worst
+    else:
+        print(f"Estimate: ${est.usd:.2f} (mean output {est.mean_output_tokens:.0f} tokens, no cache hits assumed). "
+              f"Spent so far on eval: ${spent:.2f} of the ${budget:.2f} budget.")
+        cost = est.usd
+    if not args.yes:
+        print("Nothing spent. Add --yes to run it.")
+        return
+    if spent + cost > budget and not args.over_budget:
+        print(f"Refusing: ${spent:.2f} spent + ${cost:.2f} would pass the ${budget:.2f} budget (--over-budget to allow).")
+        return
+    fn = evaluation.score_sync if args.sync else evaluation.score_batch
+    done = fn(client, lab, model, run, items, system, tool, max_chars)
+    print(f"Scored {done}/{len(items)}. Eval spend now ${evaluation.total_spend(lab):.4f}.")
+
+
 def cmd_probe(cfg, con, args):
     jobs = list(BOARDS[getattr(args, "source", "greenhouse")](args.token))
     passing = [j for j in jobs if filters.check(j, cfg["filters"]) is None]
@@ -202,8 +270,21 @@ def main(argv=None):
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("-v", "--verbose", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("ingest", "score", "digest", "run", "eval"):
+    for name in ("ingest", "score", "digest", "run"):
         sub.add_parser(name)
+    evp = sub.add_parser("eval", help="quick check, or --report for results/eval_summary.md")
+    evp.add_argument("--report", action="store_true")
+    evp.add_argument("--n-boot", type=int, default=2000)
+    eep = sub.add_parser("eval-embed", help="score the frozen pool with local embedding models")
+    eep.add_argument("--models", default="bge-small,minilm")
+    esp = sub.add_parser("eval-score", help="score set a with a Claude model (estimates first)")
+    esp.add_argument("--model", required=True)
+    esp.add_argument("--run", type=int, default=1, help="1 = all of set a, 2 = stability rescore of 50")
+    esp.add_argument("--limit", type=int, default=None)
+    esp.add_argument("--sync", action="store_true", help="one call at a time instead of the half-price Batch API")
+    esp.add_argument("--yes", action="store_true", help="actually spend")
+    esp.add_argument("--over-budget", action="store_true")
+    esp.add_argument("--no-reuse", action="store_true", help="don't reuse daily-run scores")
     sp = sub.add_parser("label-sample", help="draw the frozen label sets a, b, c (once)")
     sp.add_argument("--seed", type=int, default=20261023)
     lp = sub.add_parser("label", help="blind labeling of a frozen set")
@@ -223,10 +304,10 @@ def main(argv=None):
     cfg = load_config(args.config)
     # Labeling only touches the labels file, so a long session never holds the main DB's
     # write lock (DuckDB allows one writer) while the daily run needs it.
-    con = None if args.cmd in ("label", "label-status") else db.connect(cfg["db_path"])
+    con = None if args.cmd in ("label", "label-status", "eval-embed") else db.connect(cfg["db_path"])
     {"ingest": cmd_ingest, "score": cmd_score, "digest": cmd_digest, "run": cmd_run,
      "label": cmd_label, "label-sample": cmd_label_sample, "label-status": cmd_label_status,
-     "eval": cmd_eval, "probe": cmd_probe, "probe-greenhouse": cmd_probe}[args.cmd](cfg, con, args)
+     "eval": cmd_eval, "eval-embed": cmd_eval_embed, "eval-score": cmd_eval_score, "probe": cmd_probe, "probe-greenhouse": cmd_probe}[args.cmd](cfg, con, args)
 
 
 if __name__ == "__main__":

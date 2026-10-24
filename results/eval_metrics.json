@@ -1,0 +1,103 @@
+{
+  "generated_at": "2026-10-24T05:15:22+00:00",
+  "command": "python -m jobradar.cli eval --report",
+  "snapshot": {
+    "snapshot_id": "s20261024T045553",
+    "created_at": "2026-10-24 04:55:53",
+    "seed": 20261023,
+    "recall_backend": "tfidf",
+    "n_pool": 551,
+    "n_filtered": 5567
+  },
+  "label_counts": {
+    "a": {
+      "items": 200,
+      "labeled": 0
+    },
+    "b": {
+      "items": 30,
+      "labeled": 0
+    },
+    "c": {
+      "items": 40,
+      "labeled": 0
+    }
+  },
+  "comparison": {
+    "apply": {
+      "status": "pending",
+      "reason": "0 postings in set a labeled, 0 positive; need both positive and negative labels",
+      "excluded": []
+    },
+    "apply_or_maybe": {
+      "status": "pending",
+      "reason": "0 postings in set a labeled, 0 positive; need both positive and negative labels",
+      "excluded": []
+    }
+  },
+  "production_cost": {},
+  "stability": {},
+  "stage0_audit": {
+    "sampled": 30,
+    "labeled": 0,
+    "apply": 0,
+    "maybe": 0,
+    "by_rule": {
+      "grade": {
+        "sampled": 2,
+        "labeled": 0,
+        "apply": 0,
+        "maybe": 0,
+        "weight": 11.5
+      },
+      "hiring_path": {
+        "sampled": 3,
+        "labeled": 0,
+        "apply": 0,
+        "maybe": 0,
+        "weight": 24.0
+      },
+      "location": {
+        "sampled": 8,
+        "labeled": 0,
+        "apply": 0,
+        "maybe": 0,
+        "weight": 285.25
+      },
+      "text": {
+        "sampled": 2,
+        "labeled": 0,
+        "apply": 0,
+        "maybe": 0,
+        "weight": 2.5
+      },
+      "title": {
+        "sampled": 11,
+        "labeled": 0,
+        "apply": 0,
+        "maybe": 0,
+        "weight": 261.6363636363636
+      },
+      "years": {
+        "sampled": 4,
+        "labeled": 0,
+        "apply": 0,
+        "maybe": 0,
+        "weight": 76.75
+      }
+    },
+    "weighted_apply_share_of_filtered": null
+  },
+  "topk_audit": {
+    "status": "pending",
+    "reason": "no apply labels in set a yet"
+  },
+  "self_agreement": {
+    "status": "pending",
+    "reason": "0/40 of set c relabeled; set c opens 7 days after set a is fully labeled"
+  },
+  "api_spend": {
+    "total_usd": 0,
+    "by_model": {}
+  }
+}

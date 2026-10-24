@@ -4,6 +4,7 @@ pyyaml>=6.0
 scikit-learn>=1.3
 numpy>=1.26
 duckdb>=1.1
+matplotlib>=3.8
+scipy>=1.11
 pytest>=8.0
-# optional, for recall.backend: embeddings
-# sentence-transformers>=3.0
+# optional, for recall.backend: embeddings and eval-embed: requirements-eval.txt

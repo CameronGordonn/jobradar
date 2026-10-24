@@ -9,3 +9,7 @@ resumes/*
 !resumes/.gitkeep
 .pytest_cache/
 /config.yaml
+results/*
+!results/eval_summary.md
+!results/eval_metrics.json
+!results/precision_at_k.png
