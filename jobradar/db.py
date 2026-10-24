@@ -38,7 +38,33 @@ CREATE TABLE IF NOT EXISTS raw_{source} (
 );
 """
 
-SCHEMA = "".join(_RAW_TABLE.format(source=s) for s in RAW_SOURCES) + """
+# Public warehouse tables: everything the scheduled pipeline and dbt need, nothing personal.
+WAREHOUSE_SCHEMA = "".join(_RAW_TABLE.format(source=s) for s in RAW_SOURCES) + """
+CREATE TABLE IF NOT EXISTS ingest_runs (
+    run_id VARCHAR, source VARCHAR,
+    started_at TIMESTAMP, finished_at TIMESTAMP,
+    rows_fetched INTEGER,          -- raw postings returned by the API this run
+    rows_new INTEGER,              -- source job ids never seen before
+    PRIMARY KEY (run_id, source)
+);
+CREATE TABLE IF NOT EXISTS quality_checks (
+    run_id VARCHAR, source VARCHAR, checked_at TIMESTAMP,
+    rows_fetched INTEGER,
+    trailing_runs INTEGER,         -- earlier runs the median is taken over (up to 7)
+    trailing_median DOUBLE,
+    ratio DOUBLE,                  -- rows_fetched / trailing_median
+    flagged BOOLEAN,
+    reason VARCHAR,
+    PRIMARY KEY (run_id, source)
+);
+-- Near-duplicate clusters from embedding similarity (pipeline.dedupe). Empty until a threshold is set.
+CREATE TABLE IF NOT EXISTS job_clusters (
+    job_id VARCHAR PRIMARY KEY, cluster_id VARCHAR, threshold DOUBLE, clustered_at TIMESTAMP
+);
+"""
+
+# Personal tables: the ranking pipeline's state. Never created in the public warehouse.
+APP_SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     key VARCHAR PRIMARY KEY,
     source VARCHAR, source_id VARCHAR, title VARCHAR, org VARCHAR, location VARCHAR, url VARCHAR,
@@ -56,14 +82,8 @@ CREATE TABLE IF NOT EXISTS digested (
     key VARCHAR PRIMARY KEY,
     digest_date VARCHAR
 );
-CREATE TABLE IF NOT EXISTS ingest_runs (
-    run_id VARCHAR, source VARCHAR,
-    started_at TIMESTAMP, finished_at TIMESTAMP,
-    rows_fetched INTEGER,          -- raw postings returned by the API this run
-    rows_new INTEGER,              -- source job ids never seen before
-    PRIMARY KEY (run_id, source)
-);
 """
+SCHEMA = WAREHOUSE_SCHEMA + APP_SCHEMA
 
 _JOB_COLS = ("key", "source", "source_id", "title", "org", "location", "url", "description",
              "posted", "closes", "extra", "filter_reason", "first_seen", "last_seen")
@@ -115,12 +135,15 @@ class DB:
         self.con.close()
 
 
-def connect(path: str | Path) -> DB:
+def connect(path: str | Path, app_tables: bool = True) -> DB:
+    """app_tables=False gives the public warehouse: raw tables and run logs only."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     fresh = not p.exists()
     con = DB(p)
-    con.con.execute(SCHEMA)
+    con.con.execute(SCHEMA if app_tables else WAREHOUSE_SCHEMA)
+    if not app_tables:
+        return con
     legacy = p.with_suffix(".db")
     if fresh and legacy.exists() and legacy != p:
         migrate_sqlite(con, legacy)
@@ -153,12 +176,14 @@ def migrate_sqlite(con: DB, sqlite_path: str | Path) -> dict:
     return counts
 
 
-def upsert_raw(con: DB, source: str, rows: list[tuple[str, str, str | None, dict]], run_id: str) -> int:
+def upsert_raw(con: DB, source: str, rows: list[tuple[str, str, str | None, dict]], run_id: str,
+               at: datetime | None = None) -> int:
     """rows: (source_id, board, board_name, payload). Returns how many source ids are new.
-    The same id can arrive twice in one run (USAJOBS matches several queries); the last wins."""
+    The same id can arrive twice in one run (USAJOBS matches several queries); the last wins.
+    `at` overrides the load time (fixture loading)."""
     if source not in RAW_SOURCES:
         raise ValueError(f"unknown source {source!r}")
-    t = utcnow()
+    t = at or utcnow()
     con.execute("CREATE OR REPLACE TEMP TABLE _raw_in (seq INTEGER, source_id VARCHAR, board VARCHAR, "
                 "board_name VARCHAR, payload VARCHAR)")
     con.insert_rows("_raw_in", [(i, sid, b, bn, json.dumps(p, sort_keys=True))
@@ -206,9 +231,10 @@ def set_recall(con: DB, pairs: list[tuple[str, float]]) -> None:
     con.execute("DROP TABLE _recall_in")
 
 
-def log_run(con: DB, run_id: str, source: str, started: datetime, fetched: int, new: int) -> None:
+def log_run(con: DB, run_id: str, source: str, started: datetime, fetched: int, new: int,
+            finished: datetime | None = None) -> None:
     con.execute("INSERT OR REPLACE INTO ingest_runs VALUES (?,?,?,?,?,?)",
-                (run_id, source, started, utcnow(), fetched, new))
+                (run_id, source, started, finished or utcnow(), fetched, new))
 
 
 def row_to_job(r: dict) -> Job:

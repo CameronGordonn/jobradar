@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-import uuid
 from pathlib import Path
 
 import yaml
@@ -16,8 +15,7 @@ log = logging.getLogger("jobradar")
 # Raw fetchers yield (board, board name, payload); parsers turn a payload into a Job.
 SOURCES = {"usajobs": usajobs.fetch_raw, "greenhouse": greenhouse.fetch_raw,
            "lever": lever.fetch_raw, "ashby": ashby.fetch_raw}
-PARSERS = {"usajobs": usajobs.parse, "greenhouse": greenhouse.parse,
-           "lever": lever.parse, "ashby": ashby.parse}
+
 BOARDS = {"greenhouse": greenhouse.fetch_board, "lever": lever.fetch_board, "ashby": ashby.fetch_board}
 
 
@@ -43,23 +41,14 @@ def load_config(path: str) -> dict:
 # ---------- stages ----------
 
 def cmd_ingest(cfg, con, args=None):
-    run_id = uuid.uuid4().hex[:12]
+    from .pipeline import ingest_raw
+    _, parsed = ingest_raw(con, cfg["sources"], SOURCES)
     new = kept = total = 0
-    for name, src_cfg in cfg["sources"].items():
-        if not src_cfg.get("enabled", True) or name not in SOURCES:
-            continue
-        started = db.utcnow()
-        raw, parsed = [], []
-        for board, board_name, item in SOURCES[name](src_cfg):
-            job = PARSERS[name](item, board, board_name)
-            raw.append((job.source_id, board, board_name, item))
-            parsed.append((job, filters.check(job, cfg["filters"])))
-        new_ids = db.upsert_raw(con, name, raw, run_id)
-        new += db.upsert_jobs(con, parsed)
-        db.log_run(con, run_id, name, started, len(raw), new_ids)
-        total += len(raw)
-        kept += sum(reason is None for _, reason in parsed)
-        log.info("ingest %s: %d fetched, %d new source ids", name, len(raw), new_ids)
+    for jobs in parsed.values():
+        checked = [(job, filters.check(job, cfg["filters"])) for job in jobs]
+        new += db.upsert_jobs(con, checked)
+        total += len(checked)
+        kept += sum(reason is None for _, reason in checked)
     log.info("ingest: %d fetched, %d new rows, %d passed filters this run", total, new, kept)
     _update_recall(cfg, con)
 

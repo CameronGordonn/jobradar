@@ -40,7 +40,8 @@ def fetch_board(token: str, display_name: str | None = None,
 
 def fetch_board_raw(token: str, session: requests.Session | None = None) -> Iterator[dict]:
     s = session or requests.Session()
-    r = s.get(BASE.format(token=token), params={"content": "true"}, timeout=30)
+    # pay_transparency adds pay_input_ranges where the employer publishes them
+    r = s.get(BASE.format(token=token), params={"content": "true", "pay_transparency": "true"}, timeout=30)
     if r.status_code == 404:
         log.warning("greenhouse board %r not found (wrong token or company left Greenhouse)", token)
         return
