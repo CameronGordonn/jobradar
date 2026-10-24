@@ -1,0 +1,9 @@
+version: 2
+seeds:
+  - name: role_families
+    description: Regex rules on the normalized title; the lowest priority number that matches wins, else "other".
+    columns:
+      - name: priority
+        data_tests: [unique, not_null]
+      - name: role_family
+        data_tests: [unique, not_null]

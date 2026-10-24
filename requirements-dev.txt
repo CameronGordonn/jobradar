@@ -1,0 +1,3 @@
+# Linters run in CI (pinned so a new rule release can't break a build on its own).
+ruff==0.17.2
+sqlfluff==4.4.0

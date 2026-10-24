@@ -1,0 +1,49 @@
+# Test config: the filters the tests assert against. Not anyone's real preferences.
+db_path: data/jobradar.duckdb
+labels_db_path: data/labels.duckdb
+rubric_path: rubric.md
+
+resumes:
+  geospatial_cv: resumes/geospatial_cv.txt
+  data_science: resumes/data_science.txt
+  software_eng: resumes/software_eng.txt
+
+sources:
+  usajobs:
+    enabled: true
+    keywords: [machine learning]
+    locations: [California]
+    date_posted_days: 14
+  greenhouse:
+    enabled: true
+    boards: [{token: solarco, name: "SolarCo"}]
+  lever:
+    enabled: true
+    boards: []
+  ashby:
+    enabled: true
+    boards: []
+
+filters:
+  exclude_title: [senior, sr, staff, principal, director, manager, head, vp, "vice president", lead, intern, internship]
+  location_allow: [CA, California, "San Diego", Remote, Anywhere, "United States", USA]
+  location_block: [Canada, Toronto, Mexico, "United Kingdom", UK, London, Europe, EU, Germany, Berlin, Munich, India]
+  exclude_text: ["ts/sci", "top secret", "polygraph", "active secret clearance"]
+  max_years_required: 3
+  usajobs:
+    allowed_hiring_paths: [public, graduates]
+    max_low_grade: 9
+
+recall:
+  backend: tfidf
+  top_k: 40
+  min_recall: 0.0
+
+rerank:
+  model: claude-haiku-4-5-20251001
+  max_desc_chars: 8000
+
+digest:
+  top_n: 10
+  min_fit: 6
+  out_dir: digests

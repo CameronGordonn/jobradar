@@ -4,9 +4,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
-from jobradar import cli, db, filters
+from jobradar import cli, db, filters, labeling
+from jobradar.models import Job
 from jobradar.sources import ashby, greenhouse, lever, usajobs
 
 FIX = Path(__file__).parent / "fixtures"
@@ -51,22 +51,22 @@ class FakeClaude:
             "gaps": ["gap"], "dealbreakers": [], "pitch": "I built a rooftop solar detector."})])
 
 
+def write_resumes(base):
+    (base / "resumes").mkdir()
+    (base / "resumes/geospatial_cv.txt").write_text(
+        "Computer vision engineer. Rooftop solar panel detection with PyTorch on aerial and satellite imagery. Geospatial raster pipelines.")
+    (base / "resumes/data_science.txt").write_text(
+        "Data scientist. A/B testing, SQL, Python, statistics, diffusion models, forecasting.")
+    (base / "resumes/software_eng.txt").write_text(
+        "Full-stack engineer. Next.js, React, TypeScript, FastAPI, Docker, CI.")
+
+
 @pytest.fixture
 def cfg(tmp_path, monkeypatch):
-    shutil.copy(ROOT / "config.yaml", tmp_path / "config.yaml")
-    shutil.copy(ROOT / "rubric.example.md", tmp_path / "rubric.md")  # rubric.md is personal and gitignored
-    (tmp_path / "resumes").mkdir()
-    (tmp_path / "resumes/geospatial_cv.txt").write_text(
-        "Computer vision engineer. Rooftop solar panel detection with PyTorch on aerial and satellite imagery. Geospatial raster pipelines.")
-    (tmp_path / "resumes/data_science.txt").write_text(
-        "Data scientist. A/B testing, SQL, Python, statistics, diffusion models, forecasting.")
-    (tmp_path / "resumes/software_eng.txt").write_text(
-        "Full-stack engineer. Next.js, React, TypeScript, FastAPI, Docker, CI.")
-    raw = yaml.safe_load((tmp_path / "config.yaml").read_text())
-    raw["sources"]["greenhouse"]["boards"] = [{"token": "solarco", "name": "SolarCo"}]
-    for src in ("lever", "ashby"):  # keep tests offline; their adapters have their own tests
-        raw["sources"][src]["boards"] = []
-    (tmp_path / "config.yaml").write_text(yaml.safe_dump(raw))
+    # config.yaml and rubric.md are personal and gitignored; tests use committed stand-ins.
+    shutil.copy(FIX / "config.yaml", tmp_path / "config.yaml")
+    shutil.copy(ROOT / "rubric.example.md", tmp_path / "rubric.md")
+    write_resumes(tmp_path)
     monkeypatch.setenv("USAJOBS_API_KEY", "k")
     monkeypatch.setenv("USAJOBS_EMAIL", "me@example.com")
     return cli.load_config(str(tmp_path / "config.yaml"))
@@ -75,8 +75,8 @@ def cfg(tmp_path, monkeypatch):
 def patch_sources(monkeypatch):
     us = FakeSession(json.loads((FIX / "usajobs.json").read_text()))
     gh = FakeSession(json.loads((FIX / "greenhouse.json").read_text()))
-    monkeypatch.setitem(cli.SOURCES, "usajobs", lambda c: usajobs.fetch(c, us))
-    monkeypatch.setitem(cli.SOURCES, "greenhouse", lambda c: greenhouse.fetch(c, gh))
+    monkeypatch.setitem(cli.SOURCES, "usajobs", lambda c: usajobs.fetch_raw(c, us))
+    monkeypatch.setitem(cli.SOURCES, "greenhouse", lambda c: greenhouse.fetch_raw(c, gh))
     return us, gh
 
 
@@ -85,6 +85,7 @@ def test_usajobs_parse_and_headers(cfg):
     jobs = list(usajobs.fetch({"keywords": ["ml"], "locations": ["California"]}, s))
     assert len(jobs) == 2
     assert s.calls[0][2]["Authorization-Key"] == "k"
+    assert [j.source_id for j in jobs] == ["111", "222"]  # MatchedObjectId, not the reusable PositionID
     assert s.calls[0][1]["LocationName"] == "California"
     j = jobs[0]
     assert j.extra["hiring_paths"] == ["public", "graduates"]
@@ -137,17 +138,17 @@ def test_dedupe_across_runs(cfg, monkeypatch):
     patch_sources(monkeypatch)
     con = db.connect(cfg["db_path"])
     cli.cmd_ingest(cfg, con)
-    n1 = con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    n1 = con.scalar("SELECT COUNT(*) FROM jobs")
     cli.cmd_ingest(cfg, con)
-    assert con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == n1
+    assert con.scalar("SELECT COUNT(*) FROM jobs") == n1
 
 
-def test_end_to_end(cfg, monkeypatch):
+def test_end_to_end(cfg, monkeypatch, capsys):
     patch_sources(monkeypatch)
     con = db.connect(cfg["db_path"])
     cli.cmd_ingest(cfg, con)
 
-    passing = con.execute("SELECT title, recall FROM jobs WHERE filter_reason IS NULL ORDER BY recall DESC").fetchall()
+    passing = con.query("SELECT title, recall FROM jobs WHERE filter_reason IS NULL ORDER BY recall DESC")
     assert passing[0]["title"] in ("Machine Learning Engineer, Computer Vision", "Physical Scientist (Remote Sensing)")
 
     fake = FakeClaude()
@@ -160,13 +161,22 @@ def test_end_to_end(cfg, monkeypatch):
     assert "Grid Operations" not in text  # fit 3, below min_fit
     assert cli.digest.write(con, cfg["digest"]) is None  # already digested
 
-    # eval with hand labels
-    keys = {r["title"]: r["key"] for r in con.execute("SELECT key, title FROM jobs")}
-    for t, lab in [("Machine Learning Engineer, Computer Vision", 1), ("Data Analyst, Grid Operations", 0),
-                   ("Physical Scientist (Remote Sensing)", 1), ("Senior Staff Software Engineer", 1)]:
-        con.execute("INSERT INTO labels VALUES (?,?,?)", (keys[t], lab, db.now()))
-    con.commit()
+    # eval reads the frozen label sets; build tiny ones by hand
+    lab = labeling.connect(cfg["labels_db_path"])
+    for t, label, set_name in [("Machine Learning Engineer, Computer Vision", "apply", "a"),
+                               ("Data Analyst, Grid Operations", "no", "a"),
+                               ("Physical Scientist (Remote Sensing)", "apply", "a"),
+                               ("Senior Staff Software Engineer", "apply", "b")]:
+        r = con.query("SELECT * FROM jobs WHERE title=?", (t,))[0]
+        lab.insert_rows("label_items", [(set_name, 0, "s", r["key"], r["source"], r["source_id"], r["title"],
+                                         r["org"], r["location"], r["url"], r["description"], r["extra"],
+                                         r["filter_reason"], r["recall"], "x", 1.0)])
+        lab.execute("INSERT INTO labels VALUES (?,?,?,?,?,?,?)",
+                    (set_name, r["source"], r["source_id"], r["key"], label, None, db.utcnow()))
     cli.cmd_eval(cfg, con, SimpleNamespace(), client=fake)
+    out = capsys.readouterr().out
+    assert "Senior Staff Software Engineer" in out and "Recall stage AUC" in out
+    assert fake.n == len(passing)  # eval never calls Claude
 
 
 def test_usajobs_multiple_locations_expanded(cfg):
@@ -252,3 +262,98 @@ def test_every_rerank_failing_fails_the_run(cfg, monkeypatch):
     with pytest.raises(RuntimeError, match="failed for all"):
         cli.cmd_score(cfg, con, client=fake)
     assert fake.n > 1  # transient errors still get tried on every job
+
+
+def test_example_config_reads_public_sources(tmp_path):
+    for f in ("config.example.yaml", "sources.yaml"):
+        shutil.copy(ROOT / f, tmp_path / f)
+    shutil.copy(ROOT / "rubric.example.md", tmp_path / "rubric.md")
+    (tmp_path / "resumes").mkdir()
+    (tmp_path / "resumes/main.txt").write_text("resume")
+    c = cli.load_config(str(tmp_path / "config.example.yaml"))
+    assert set(c["sources"]) == {"usajobs", "greenhouse", "lever", "ashby"}
+    assert c["filters"]["usajobs"]["max_low_grade"] == 9
+    # The public file holds queries only, no personal filter rules.
+    assert "max_low_grade" not in c["sources"]["usajobs"]
+
+
+def test_raw_tables_idempotent(cfg, monkeypatch):
+    patch_sources(monkeypatch)
+    con = db.connect(cfg["db_path"])
+    cli.cmd_ingest(cfg, con)
+    first = {s: con.scalar(f"SELECT COUNT(*) FROM raw_{s}") for s in db.RAW_SOURCES}
+    t1 = con.scalar("SELECT max(ingested_at) FROM raw_greenhouse")
+    cli.cmd_ingest(cfg, con)
+    assert {s: con.scalar(f"SELECT COUNT(*) FROM raw_{s}") for s in db.RAW_SOURCES} == first
+    assert first["usajobs"] == 2 and first["greenhouse"] > 0
+    # First load time is kept; latest load time moves forward or stays equal.
+    r = con.query("SELECT first_ingested_at, ingested_at, payload FROM raw_greenhouse LIMIT 1")[0]
+    assert r["first_ingested_at"] <= r["ingested_at"] and r["ingested_at"] >= t1
+    assert '"title"' in r["payload"]  # untouched API payload
+    runs = con.query("SELECT source, rows_fetched, rows_new FROM ingest_runs ORDER BY started_at, source")
+    assert [x["rows_new"] for x in runs if x["source"] == "usajobs"] == [2, 0]
+
+
+def test_raw_upsert_same_id_twice_in_one_batch(tmp_path):
+    con = db.connect(tmp_path / "x.duckdb")
+    n = db.upsert_raw(con, "usajobs", [("1", "a|", None, {"v": 1}), ("1", "b|", None, {"v": 2})], "r1")
+    assert n == 1
+    assert con.query("SELECT board, payload FROM raw_usajobs") == [{"board": "b|", "payload": '{"v": 2}'}]
+
+
+def test_migrates_legacy_sqlite(tmp_path):
+    import sqlite3
+    legacy = sqlite3.connect(tmp_path / "jobradar.db")
+    legacy.executescript("""
+        CREATE TABLE jobs (key TEXT PRIMARY KEY, source TEXT, source_id TEXT, title TEXT, org TEXT,
+            location TEXT, url TEXT, description TEXT, posted TEXT, closes TEXT, extra TEXT,
+            filter_reason TEXT, recall REAL, first_seen TEXT, last_seen TEXT);
+        CREATE TABLE scores (key TEXT PRIMARY KEY, fit INTEGER, recommend TEXT, variant TEXT, evidence TEXT,
+            gaps TEXT, dealbreakers TEXT, pitch TEXT, model TEXT, scored_at TEXT);
+        CREATE TABLE labels (key TEXT PRIMARY KEY, label INTEGER, labeled_at TEXT);
+        CREATE TABLE digested (key TEXT PRIMARY KEY, digest_date TEXT);
+        INSERT INTO jobs VALUES ('k1','lever','a:1','DS','A','CA','u','d',NULL,NULL,'{}',NULL,0.5,'t','t');
+        INSERT INTO scores VALUES ('k1',7,'apply','v','e','[]','[]','p','m','t');
+    """)
+    legacy.commit()
+    legacy.close()
+    con = db.connect(tmp_path / "jobradar.duckdb")
+    # Copied, then rekeyed on source id; the old hash survives as dedupe_key.
+    assert con.query("SELECT key, dedupe_key, recall FROM jobs") == [{"key": "lever:a:1", "dedupe_key": "k1", "recall": 0.5}]
+    assert con.query("SELECT key, fit FROM scores") == [{"key": "lever:a:1", "fit": 7}]
+    assert (tmp_path / "jobradar.db").exists()  # left in place
+
+
+def test_rekey_merges_versions_and_moves_scores(tmp_path):
+    con = db.connect(tmp_path / "x.duckdb")
+    con.execute("""INSERT INTO jobs (key, source, source_id, title, org, location, last_seen) VALUES
+        ('h_old', 'greenhouse', 'b:1', 'TPU Kernel Engineer', 'A', 'SF', '2026-10-01'),
+        ('h_new', 'greenhouse', 'b:1', 'TPU Performance Engineer', 'A', 'SF', '2026-10-20'),
+        ('h_other', 'lever', 's:9', 'Analyst', 'B', 'NY', '2026-10-20')""")
+    con.execute("""INSERT INTO scores (key, fit, scored_at) VALUES ('h_old', 4, '2026-10-02'), ('h_new', 8, '2026-10-21')""")
+    con.execute("INSERT INTO digested VALUES ('h_old', '2026-10-02')")
+    assert db.migrate_job_keys(con) == 3
+    assert con.query("SELECT key, title, dedupe_key FROM jobs ORDER BY key") == [
+        {"key": "greenhouse:b:1", "title": "TPU Performance Engineer", "dedupe_key": "h_new"},
+        {"key": "lever:s:9", "title": "Analyst", "dedupe_key": "h_other"}]
+    assert con.query("SELECT key, fit FROM scores") == [{"key": "greenhouse:b:1", "fit": 8}]
+    assert con.query("SELECT key FROM digested") == [{"key": "greenhouse:b:1"}]
+    assert db.migrate_job_keys(con) == 0  # idempotent
+
+
+def test_edited_posting_updates_in_place_and_duplicates_score_once(cfg):
+    con = db.connect(cfg["db_path"])
+    a = Job("greenhouse", "b:1", "Data Scientist", "Org", "CA", "u", "computer vision models")
+    dup = Job("lever", "s:2", "Data Scientist", "Org", "CA", "u2", "computer vision models")  # same org/title/location
+    db.upsert_jobs(con, [(a, None), (dup, None)])
+    db.set_recall(con, [(a.key, 0.9), (dup.key, 0.8)])
+    fake = FakeClaude()
+    cli.cmd_score(cfg, con, client=fake)
+    assert fake.n == 1                                   # one call for the dedupe group
+    assert con.query("SELECT key FROM scores") == [{"key": a.key}]
+    cli.cmd_score(cfg, con, client=fake)
+    assert fake.n == 1                                   # the duplicate is never sent later either
+    edited = Job("greenhouse", "b:1", "Data Scientist II", "Org", "CA", "u", "computer vision models")
+    db.upsert_jobs(con, [(edited, None)])
+    assert con.query("SELECT title FROM jobs WHERE key=?", (a.key,)) == [{"title": "Data Scientist II"}]
+    assert con.scalar("SELECT COUNT(*) FROM jobs") == 2

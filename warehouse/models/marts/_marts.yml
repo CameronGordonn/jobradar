@@ -1,0 +1,93 @@
+version: 2
+
+models:
+  - name: mart_open_postings
+    description: Open postings now, near-duplicates collapsed to one row (the earliest posted variant).
+    columns:
+      - name: posting_id
+        data_tests: [unique, not_null]
+      - name: job_id
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_jobs')
+                field: job_id
+      - name: variants
+        data_tests: [not_null]
+
+  - name: mart_daily_postings
+    description: Postings published per day per source, and the feed size of that day's last run.
+    columns:
+      - name: day_source
+        data_tests: [unique, not_null]
+      - name: source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [usajobs, greenhouse, lever, ashby]
+
+  - name: mart_weekly_postings
+    description: New postings per week by role family and company (deduplicated).
+    columns:
+      - name: grain_key
+        data_tests: [unique, not_null]
+
+  - name: mart_source_health
+    description: Per-run, per-source row counts with the trailing-median quality check.
+    columns:
+      - name: run_id
+        data_tests: [not_null]
+      - name: flagged
+        data_tests: [not_null]
+
+  - name: mart_posting_lifecycle
+    description: Closed board postings and how many days each was listed (published to last seen).
+    columns:
+      - name: job_id
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_jobs')
+                field: job_id
+      - name: days_listed
+        data_tests: [not_null]
+
+  - name: mart_posting_changes
+    description: Per posting, how many times its title, location, salary, remote status or open status changed after it was first seen.
+    columns:
+      - name: job_id
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_jobs')
+                field: job_id
+      - name: versions
+        data_tests: [not_null]
+
+unit_tests:
+  - name: lifecycle_keeps_closed_board_postings_only
+    model: mart_posting_lifecycle
+    given:
+      - input: ref('int_jobs')
+        rows:
+          - {job_id: "greenhouse:1", source: greenhouse, company: A, role_family: other, is_open: false, board_active: true,
+             posted_at: "2026-09-01 00:00:00", posted_date: "2026-09-01", ingested_at: "2026-09-21 09:00:00",
+             first_ingested_at: "2026-09-10 09:00:00"}
+          - {job_id: "greenhouse:2", source: greenhouse, company: A, role_family: other, is_open: true, board_active: true,
+             posted_at: "2026-09-01 00:00:00", posted_date: "2026-09-01", ingested_at: "2026-09-21 09:00:00",
+             first_ingested_at: "2026-09-10 09:00:00"}
+          - {job_id: "greenhouse:4", source: greenhouse, company: C, role_family: other, is_open: false, board_active: false,
+             posted_at: "2026-08-01 00:00:00", posted_date: "2026-08-01", ingested_at: "2026-08-20 09:00:00",
+             first_ingested_at: "2026-08-10 09:00:00"}
+          - {job_id: "usajobs:3", source: usajobs, company: B, role_family: other, is_open: false, board_active: true,
+             posted_at: "2026-09-01 00:00:00", posted_date: "2026-09-01", ingested_at: "2026-09-05 09:00:00",
+             first_ingested_at: "2026-09-02 09:00:00"}
+    expect:
+      rows:
+        - {job_id: "greenhouse:1", days_listed: 20, first_seen_date: "2026-09-10", last_seen_date: "2026-09-21"}

@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["warehouse/target", "data", "site"]
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, import order, bugbear, pyupgrade
+select = ["F", "E", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test data rows (SQL VALUES tables, fixture text) read better unwrapped.
+"tests/*" = ["E501"]

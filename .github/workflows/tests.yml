@@ -5,6 +5,21 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: ruff (Python)
+        run: ruff check .
+      - name: sqlfluff (dbt models and tests; Jinja templater, no database needed)
+        working-directory: warehouse
+        run: sqlfluff lint models tests
+
   pytest:
     runs-on: ubuntu-latest
     steps:
@@ -14,5 +29,32 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      # Tests run on recorded fixtures: no API keys or network needed.
+      # Tests run on recorded and synthetic fixtures: no API keys or network needed.
       - run: python -m pytest -q   # -m puts the repo root on sys.path so `jobradar` imports
+
+  dbt:
+    runs-on: ubuntu-latest
+    env:
+      JOBRADAR_WAREHOUSE: ${{ github.workspace }}/ci.duckdb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-pipeline.txt
+      # A warehouse built from the committed synthetic fixture (eight daily runs, made-up companies).
+      - run: python -m jobradar.pipeline --db ci.duckdb load-fixtures
+      - name: dbt build (models, data tests, unit tests)
+        working-directory: warehouse
+        run: dbt build --profiles-dir .
+      - name: dbt source freshness
+        working-directory: warehouse
+        run: dbt source freshness --profiles-dir .
+      - name: Dashboard builds from the marts
+        run: python -m jobradar.pipeline --db ci.duckdb dashboard --out site
+      - name: dbt docs generate
+        working-directory: warehouse
+        run: dbt docs generate --static --profiles-dir .
+      - name: Snapshot history across two builds
+        run: python -m pytest -q tests/test_dbt_snapshot.py

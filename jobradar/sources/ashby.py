@@ -6,7 +6,7 @@ Verify with:  python -m jobradar.cli probe ashby <name>
 from __future__ import annotations
 
 import logging
-from typing import Iterator
+from collections.abc import Iterator
 
 import requests
 
@@ -48,21 +48,37 @@ def parse_job(j: dict, name: str, display_name: str | None) -> Job:
 
 def fetch_board(name: str, display_name: str | None = None,
                 session: requests.Session | None = None) -> Iterator[Job]:
+    for j in fetch_board_raw(name, session):
+        yield parse_job(j, name, display_name)
+
+
+def fetch_board_raw(name: str, session: requests.Session | None = None) -> Iterator[dict]:
     s = session or requests.Session()
-    r = s.get(BASE.format(name=name), params={"includeCompensation": "false"}, timeout=30)
+    # includeCompensation keeps salary in the raw payload for the warehouse
+    r = s.get(BASE.format(name=name), params={"includeCompensation": "true"}, timeout=30)
     if r.status_code == 404:
         log.warning("ashby board %r not found (wrong name or company left Ashby)", name)
         return
     r.raise_for_status()
     jobs = [j for j in r.json().get("jobs", []) if j.get("isListed", True)]
     log.info("ashby %s: %d jobs", name, len(jobs))
-    for j in jobs:
-        yield parse_job(j, name, display_name)
+    yield from jobs
+
+
+def parse(item: dict, board: str, board_name: str | None = None) -> Job:
+    return parse_job(item, board, board_name)
 
 
 def fetch(cfg: dict, session: requests.Session | None = None) -> Iterator[Job]:
+    for board, name, item in fetch_raw(cfg, session):
+        yield parse(item, board, name)
+
+
+def fetch_raw(cfg: dict, session: requests.Session | None = None) -> Iterator[tuple[str, str | None, dict]]:
+    """Yield (board token, display name, raw posting) for every configured board."""
     for b in cfg.get("boards", []):
         try:
-            yield from fetch_board(b["token"], b.get("name"), session)
+            for item in fetch_board_raw(b["token"], session):
+                yield b["token"], b.get("name"), item
         except requests.RequestException as e:
             log.error("ashby %s failed: %s", b["token"], e)

@@ -1,0 +1,12 @@
+priority,role_family,pattern
+1,geospatial_earth,\b(geospatial|gis|remote sensing|cartograph\w*|photogrammetr\w*|geograph\w*|hydrolog\w*|geolog\w*|geophysic\w*|earth|climate|meteorolog\w*|surveyor|oceanograph\w*)\b
+2,machine_learning,\b(machine learning|deep learning|computer vision|ai|artificial intelligence|nlp|perception|llm|applied scientist|research scientist|research engineer\w*|inference)\b
+3,data_science,\b(data scien\w*|statistician|statistics|quantitative|operations research|econometric\w*|decision scien\w*)\b
+4,data_engineering,\b(data engineer\w*|analytics engineer\w*|etl|data platform|data infrastructure|database\w*|data architect\w*)\b
+5,data_analytics,\b(analyst|analytics|business intelligence|bi|insights|reporting)\b
+6,sales_gtm,\b(sales|account executive|account manager|business development|marketing|customer success|partnerships|partner|solutions engineer\w*|sales engineer\w*|solutions architect\w*|customer engineer\w*|go to market|gtm|growth)\b
+7,product_design,\b(product manager|program manager|project manager|product owner|product lead|designer|ux|ui|product design|technical program)\b
+8,hardware_robotics,\b(robot\w*|mechanical|electrical|hardware|firmware|embedded|manufactur\w*|technician|mechatronic\w*|mechanic|electronics|machinist|welder|assembl\w*|controls)\b
+9,software_engineering,\b(software|developer|backend|back end|frontend|front end|full stack|fullstack|devops|sre|site reliability|platform|infrastructure|security engineer\w*|engineer\w*|architect|programmer|member of technical staff)\b
+10,healthcare,\b(clinical|nurse|nursing|physician|medical|pharmac\w*|dietitian|therap\w*|health|dental|psycholog\w*|veterinar\w*|laboratory)\b
+11,business_operations,\b(operations|associate|administrat\w*|finance|financial|accounting|accountant|legal|counsel|attorney|paralegal|people|hr|human resources|recruit\w*|talent|procurement|supply chain|logistics|policy|communications|executive assistant|assistant|coordinator|officer|specialist|manager|director|analyst)\b
