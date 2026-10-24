@@ -59,7 +59,17 @@ def parse_item(item: dict) -> Job:
     )
 
 
+def parse(item: dict, board: str, board_name: str | None = None) -> Job:
+    return parse_item(item)
+
+
 def fetch(cfg: dict, session: requests.Session | None = None) -> Iterator[Job]:
+    for board, name, item in fetch_raw(cfg, session):
+        yield parse(item, board, name)
+
+
+def fetch_raw(cfg: dict, session: requests.Session | None = None) -> Iterator[tuple[str, None, dict]]:
+    """Yield (query, None, raw item). The query stands in for a board: "keyword|location"."""
     key, email = os.environ.get("USAJOBS_API_KEY"), os.environ.get("USAJOBS_EMAIL")
     if not key or not email:
         log.warning("USAJOBS_API_KEY / USAJOBS_EMAIL not set; skipping USAJOBS")
@@ -84,7 +94,7 @@ def fetch(cfg: dict, session: requests.Session | None = None) -> Iterator[Job]:
                     break
                 items = result.get("SearchResultItems", [])
                 for it in items:
-                    yield parse_item(it)
+                    yield f"{kw}|{loc or ''}", None, it
                 total = int(result.get("SearchResultCountAll", 0))
                 log.info("usajobs kw=%r loc=%r page=%d got=%d total=%d", kw, loc, page, len(items), total)
                 if not items or page * PAGE_SIZE >= total:
