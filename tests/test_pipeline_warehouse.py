@@ -41,6 +41,16 @@ def test_quality_ok_and_too_little_history(tmp_path):
     assert c["flagged"] is False and "need 3" in c["reason"]
 
 
+def test_quality_flags_a_source_stuck_at_zero(tmp_path):
+    con = db.connect(tmp_path / "w.duckdb", app_tables=False)
+    log_runs(con, "usajobs", [800, 0, 0, 0, 0, 0, 0, 0, 0])   # trailing median is now 0
+    c = pipeline.check_quality(con, "r08")[0]
+    assert c["flagged"] and "no rows" in c["reason"]
+    con2 = db.connect(tmp_path / "w2.duckdb", app_tables=False)
+    log_runs(con2, "usajobs", [0])                           # even on the very first run
+    assert pipeline.check_quality(con2, "r00")[0]["flagged"]
+
+
 def test_quality_flags_source_missing_from_run(tmp_path):
     con = db.connect(tmp_path / "w.duckdb", app_tables=False)
     log_runs(con, "usajobs", [50, 50, 50])

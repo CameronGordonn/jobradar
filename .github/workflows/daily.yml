@@ -81,7 +81,13 @@ jobs:
         env:
           USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
           USAJOBS_EMAIL: ${{ secrets.USAJOBS_EMAIL }}
-        run: python -m jobradar.pipeline --db data/warehouse.duckdb ingest
+        run: |
+          # The USAJOBS adapter skips itself without credentials; fail here with the reason instead.
+          if [ -z "$USAJOBS_API_KEY" ] || [ -z "$USAJOBS_EMAIL" ]; then
+            echo "::error::Set the USAJOBS_API_KEY and USAJOBS_EMAIL repository secrets."
+            exit 1
+          fi
+          python -m jobradar.pipeline --db data/warehouse.duckdb ingest
 
       - name: Data quality checks (flags show as warnings on the run)
         run: python -m jobradar.pipeline --db data/warehouse.duckdb quality --flags-out quality_flags.json

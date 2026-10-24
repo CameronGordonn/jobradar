@@ -62,7 +62,9 @@ def ingest_raw(con: DB, sources: dict, fetchers: dict[str, Callable] | None = No
 
 def check_quality(con: DB, run_id: str | None = None) -> list[dict]:
     """Compare each source's row count in a run with the median of its previous runs (up to 7).
-    Flags a drop below half the median, and a source with history that logged nothing."""
+    Flags a drop below half the median, a run that returned no rows at all (an enabled source
+    is never legitimately empty, and a source stuck at zero would otherwise drag its own median
+    to zero and read as fine), and a source with history that logged nothing."""
     if run_id is None:
         run_id = con.scalar("SELECT run_id FROM ingest_runs ORDER BY started_at DESC LIMIT 1")
         if run_id is None:
@@ -83,6 +85,8 @@ def check_quality(con: DB, run_id: str | None = None) -> list[dict]:
         med = statistics.median(prev) if prev else None
         if n is None:
             flagged, reason = True, "no rows logged this run (source disabled or the run crashed)"
+        elif n == 0:
+            flagged, reason = True, "returned no rows: missing credentials, an API change or an outage"
         elif len(prev) < QUALITY_MIN_HISTORY:
             flagged, reason = False, f"only {len(prev)} earlier runs; need {QUALITY_MIN_HISTORY} to judge"
         elif n < QUALITY_DROP * med:
