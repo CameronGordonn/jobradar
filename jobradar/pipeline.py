@@ -147,6 +147,9 @@ def main(argv=None):
     ap_ = sub.add_parser("dedupe", help="cluster postings at the threshold in sources.yaml into job_clusters")
     ap_.add_argument("--sources", default="sources.yaml")
     ap_.add_argument("--threshold", type=float, default=None)
+    bp = sub.add_parser("dashboard", help="export the marts to a static site (aggregates only)")
+    bp.add_argument("--sources", default="sources.yaml")
+    bp.add_argument("--out", default="site")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
@@ -199,6 +202,10 @@ def main(argv=None):
                   f"(raw tp={c['tp']} fp={c['fp']} fn={c['fn']}). Collapses {res['collapsed_share']:.1%} of "
                   f"{len(jobs)} open postings ({res['collapsed_share_exact_only']:.1%} from exact matches alone). "
                   f"Wrote {out}.")
+    elif args.cmd == "dashboard":
+        from . import dashboard
+        d = dashboard.build(con, Path(args.sources), Path(args.out))
+        print(f"wrote {args.out}/index.html and data.json: {d['tiles']['open_postings']} open postings")
     elif args.cmd == "dedupe":
         from . import dedupe
         t = args.threshold

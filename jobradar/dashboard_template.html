@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Postings Tracker</title>
+<meta name="description" content="Daily counts of public job postings from USAJOBS and company job boards, built by the jobradar pipeline.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --good: #0ca30c; --serious: #ec835a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 48px; }
+h1 { font-size: 28px; margin: 0 0 4px; font-weight: 650; }
+h2 { font-size: 16px; margin: 0 0 2px; font-weight: 600; }
+.sub, .note { color: var(--ink-2); margin: 0; }
+.note { font-size: 13px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 24px 0; }
+.tile, .card { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; }
+.tile .label { color: var(--ink-2); font-size: 13px; }
+.tile .value { font-size: 28px; font-weight: 600; margin-top: 2px; }
+.tile .hint { color: var(--muted); font-size: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; margin-top: 12px; }
+.card { min-width: 0; }
+.chart { position: relative; margin-top: 12px; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 13px; color: var(--ink-2); }
+.key { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 1px; }
+.tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--ring);
+       border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+       display: none; white-space: nowrap; z-index: 2; }
+.tip .row { display: flex; align-items: center; gap: 8px; }
+.tip strong { font-variant-numeric: tabular-nums; }
+.tip .muted { color: var(--ink-2); }
+details { margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+summary { cursor: pointer; }
+table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 13px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.status { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.bar:hover, .bar:focus { opacity: 0.8; outline: none; }
+footer { margin-top: 32px; color: var(--ink-2); font-size: 13px; }
+a { color: var(--series-1); }
+.scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Job postings tracker</h1>
+  <p class="sub" id="scope"></p>
+
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+  <section class="card">
+    <h2>Postings in each source's feed, per daily run</h2>
+    <p class="note">How many open postings each source returned. This series starts on the pipeline's first run and grows by one point a day.</p>
+    <div class="chart" id="feed"></div>
+    <div class="legend" id="feed-legend"></div>
+    <details><summary>Table</summary><div class="scroll" id="feed-table"></div></details>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <h2>Postings by week first published</h2>
+    <p class="note">Near-duplicates collapsed; the current, partial week is left out. Only postings that were still open when the
+      pipeline first saw them are counted, so earlier weeks are undercounted and the line rises toward the present. USAJOBS
+      searches return the last 14 days only, so its history starts there.</p>
+    <div class="chart" id="weekly"></div>
+    <div class="legend" id="weekly-legend"></div>
+    <details><summary>Table</summary><div class="scroll" id="weekly-table"></div></details>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Open postings by role family</h2>
+      <p class="note">Role family comes from title rules (warehouse/seeds/role_families.csv).</p>
+      <div class="chart" id="family"></div>
+      <details><summary>Table</summary><div id="family-table"></div></details>
+    </section>
+    <section class="card">
+      <h2>Top hiring companies</h2>
+      <p class="note">Open postings, near-duplicates collapsed.</p>
+      <div class="chart" id="companies"></div>
+      <details><summary>Table</summary><div id="companies-table"></div></details>
+    </section>
+    <section class="card">
+      <h2>Remote share by role family</h2>
+      <p class="note">Share of open postings marked remote by the source or in the location. Families with 10 or more open postings.</p>
+      <div class="chart" id="remote"></div>
+      <details><summary>Table</summary><div id="remote-table"></div></details>
+    </section>
+    <section class="card">
+      <h2>Median posted salary by role family</h2>
+      <p class="note">Midpoint of the posted range, yearly USD, postings that list one. Families with 10 or more.</p>
+      <div class="chart" id="salary"></div>
+      <details><summary>Table</summary><div id="salary-table"></div></details>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:12px">
+    <h2>Pipeline health</h2>
+    <p class="note">Latest run per source. A source is flagged when it returns less than half the median of its previous 7 runs.</p>
+    <div class="scroll" id="health"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const fmt = new Intl.NumberFormat("en-US");
+const pct = v => (v * 100).toFixed(0) + "%";
+const usd = v => "$" + Math.round(v / 1000) + "K";
+const NAMES = { usajobs: "USAJOBS", greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby" };
+const FAMILIES = { sales_gtm: "Sales and go-to-market", geospatial_earth: "Geospatial and earth science",
+  hardware_robotics: "Hardware and robotics", product_design: "Product and design",
+  business_operations: "Business and operations", machine_learning: "Machine learning", data_science: "Data science",
+  data_engineering: "Data engineering", data_analytics: "Data analytics", software_engineering: "Software engineering",
+  healthcare: "Healthcare", other: "Other" };
+const nice = s => FAMILIES[s] || s.replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function h(tag, text, parent, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;  // labels are data: textContent only
+  if (cls) e.className = cls;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+}
+function compact(v) { return v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, "") + "K" : String(v); }
+function table(target, head, rows, numCols = []) {
+  const t = h("table", undefined, target), tr = h("tr", undefined, h("thead", undefined, t));
+  head.forEach((c, i) => h("th", c, tr, numCols.includes(i) ? "num" : ""));
+  const tb = h("tbody", undefined, t);
+  rows.forEach(r => { const row = h("tr", undefined, tb); r.forEach((c, i) => h("td", c, row, numCols.includes(i) ? "num" : "")); });
+}
+function tooltip(container) {
+  const t = h("div", undefined, container, "tip");
+  return {
+    show(x, y, rows, title) {
+      t.replaceChildren();
+      if (title) h("div", title, t, "muted");
+      rows.forEach(r => {
+        const row = h("div", undefined, t, "row");
+        if (r.color) { const k = h("span", undefined, row, "key"); k.style.background = r.color; }
+        h("strong", r.value, row);
+        if (r.label) h("span", r.label, row, "muted");
+      });
+      t.style.display = "block";
+      const w = container.clientWidth, tw = t.offsetWidth;
+      t.style.left = Math.min(Math.max(0, x + 12), w - tw) + "px";
+      t.style.top = Math.max(0, y - t.offsetHeight - 8) + "px";
+    },
+    hide() { t.style.display = "none"; }
+  };
+}
+
+function lineChart(target, legendEl, data, order, tipPrefix) {
+  target.replaceChildren();
+  const W = Math.max(300, target.clientWidth), H = 280, m = { t: 12, r: 92, b: 28, l: 40 };
+  const weeks = [...new Set(data.map(d => d.x))].sort();
+  const sources = order.filter(s => data.some(d => d.source === s));
+  const val = (w, s) => (data.find(d => d.x === w && d.source === s) || { n: 0 }).n;
+  const ymax = niceMax(Math.max(1, ...data.map(d => d.n)));
+  const x = i => m.l + (weeks.length < 2 ? 0 : i * (W - m.l - m.r) / (weeks.length - 1));
+  const y = v => H - m.b - v * (H - m.t - m.b) / ymax;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img",
+                          "aria-label": "New postings per week by source" }, target);
+  const lead = ymax / Math.pow(10, Math.floor(Math.log10(ymax))), steps = lead === 2 ? 4 : 5;  // round tick values
+  for (let i = 0; i <= steps; i++) {
+    const v = ymax * i / steps;
+    el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: i ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }, svg);
+    el("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 }, svg).textContent = compact(v);
+  }
+  const step = Math.ceil(weeks.length / Math.max(2, Math.floor((W - m.l - m.r) / 80)));
+  weeks.forEach((w, i) => {
+    if (i % step) return;
+    el("text", { x: x(i), y: H - 8, "text-anchor": "middle", fill: "var(--muted)", "font-size": 11 }, svg).textContent =
+      new Date(w + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  });
+  const ends = [];
+  sources.forEach(s => {
+    const color = `var(--series-${order.indexOf(s) + 1})`;
+    const pts = weeks.map((w, i) => `${x(i)},${y(val(w, s))}`).join(" ");
+    el("polyline", { points: pts, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    const last = weeks.length - 1, ly = y(val(weeks[last], s));
+    el("circle", { cx: x(last), cy: ly, r: 4, fill: color, stroke: "var(--surface-1)", "stroke-width": 2 }, svg);
+    ends.push({ s, ly });
+  });
+  // End labels only where they don't collide; the legend and tooltip carry the rest.
+  ends.sort((a, b) => a.ly - b.ly).forEach((e, i, arr) => {
+    const clear = (i === 0 || e.ly - arr[i - 1].ly >= 14) && (i === arr.length - 1 || arr[i + 1].ly - e.ly >= 14);
+    if (clear) el("text", { x: x(weeks.length - 1) + 10, y: e.ly + 4, fill: "var(--ink-2)", "font-size": 12 }, svg).textContent = NAMES[e.s];
+  });
+  const cross = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const tip = tooltip(target);
+  const hit = el("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }, svg);
+  function move(ev) {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width;
+    const i = Math.max(0, Math.min(weeks.length - 1, Math.round((px - m.l) / ((W - m.l - m.r) / Math.max(1, weeks.length - 1)))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    const rows = sources.map(s => ({ value: fmt.format(val(weeks[i], s)), label: NAMES[s], color: `var(--series-${order.indexOf(s) + 1})` }))
+      .sort((a, b) => parseInt(b.value.replace(/,/g, "")) - parseInt(a.value.replace(/,/g, "")));
+    tip.show(x(i) * r.width / W, (ev.clientY - r.top), rows, tipPrefix + weeks[i]);
+  }
+  hit.addEventListener("pointermove", move);
+  hit.addEventListener("pointerleave", () => { tip.hide(); cross.setAttribute("visibility", "hidden"); });
+  legendEl.replaceChildren();
+  sources.forEach(s => {
+    const item = h("span", undefined, legendEl), k = h("span", undefined, item, "key");
+    k.style.background = `var(--series-${order.indexOf(s) + 1})`;
+    item.appendChild(document.createTextNode(NAMES[s]));
+  });
+}
+
+function barChart(target, rows, format, max) {
+  target.replaceChildren();
+  const W = Math.max(280, target.clientWidth), bar = 18, gap = 10, m = { l: Math.min(150, Math.round(W * 0.38)), r: 56 };
+  const H = rows.length * (bar + gap);
+  const vmax = max || niceMax(Math.max(1, ...rows.map(r => r.value)));
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img" }, target);
+  const tip = tooltip(target);
+  el("line", { x1: m.l, x2: m.l, y1: 0, y2: H, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+  rows.forEach((r, i) => {
+    const y0 = i * (bar + gap) + gap / 2, w = Math.max(1, (W - m.l - m.r) * r.value / vmax), rad = Math.min(4, w);
+    el("text", { x: m.l - 8, y: y0 + bar / 2 + 4, "text-anchor": "end", fill: "var(--ink-2)", "font-size": 12 }, svg).textContent =
+      r.label.length > Math.floor(m.l / 7) ? r.label.slice(0, Math.floor(m.l / 7) - 1) + "…" : r.label;
+    // Square at the baseline, 4px rounded at the data end.
+    const d = `M${m.l},${y0} h${w - rad} a${rad},${rad} 0 0 1 ${rad},${rad} v${bar - 2 * rad} a${rad},${rad} 0 0 1 -${rad},${rad} h-${w - rad} z`;
+    const p = el("path", { d, fill: "var(--series-1)", class: "bar", tabindex: 0 }, svg);
+    el("text", { x: m.l + w + 6, y: y0 + bar / 2 + 4, fill: "var(--ink)", "font-size": 12 }, svg).textContent = format(r.value);
+    const show = ev => {
+      const rect = svg.getBoundingClientRect();
+      const rowsTip = [{ value: format(r.value), label: r.n ? `${fmt.format(r.n)} postings` : "" }];
+      tip.show((m.l + w) * rect.width / W, y0 * rect.height / H, rowsTip, r.label);
+    };
+    p.addEventListener("pointermove", show); p.addEventListener("focus", show);
+    p.addEventListener("pointerleave", () => tip.hide()); p.addEventListener("blur", () => tip.hide());
+  });
+}
+
+function render(d) {
+  const sc = d.scope;
+  document.getElementById("scope").textContent =
+    `Postings from USAJOBS (${sc.usajobs_queries} searches: ${sc.usajobs_keywords.join(", ")}) and ` +
+    `${sc.board_count} company boards on Greenhouse, Lever and Ashby. These are the boards and searches a job-search ` +
+    `tool watches, not the whole job market. Updated ${d.generated_at.replace("T", " ").replace("+00:00", " UTC")}.`;
+  const tiles = document.getElementById("tiles"); tiles.replaceChildren();
+  [["Open postings", fmt.format(d.tiles.open_postings), `${fmt.format(d.tiles.open_before_dedupe)} before near-duplicates are collapsed`],
+   ["Companies hiring", fmt.format(d.tiles.companies), "with at least one open posting"],
+   ["Remote", pct(d.tiles.remote_share), "of open postings"],
+   ["Salary posted", pct(d.tiles.salary_share), "of open postings list a range"]].forEach(([l, v, hint]) => {
+    const t = h("div", undefined, tiles, "tile"); h("div", l, t, "label"); h("div", v, t, "value"); h("div", hint, t, "hint");
+  });
+  const order = d.source_order;
+  const draw = () => {
+    lineChart(document.getElementById("feed"), document.getElementById("feed-legend"), d.feed_by_source, order, "");
+    lineChart(document.getElementById("weekly"), document.getElementById("weekly-legend"), d.weekly_by_source, order, "Week of ");
+    barChart(document.getElementById("family"), d.open_by_family.map(r => ({ ...r, label: nice(r.label) })), v => fmt.format(v));
+    barChart(document.getElementById("companies"), d.top_companies, v => fmt.format(v));
+    barChart(document.getElementById("remote"), [...d.remote_by_family].sort((a, b) => b.value - a.value)
+      .map(r => ({ ...r, label: nice(r.label) })), pct, 1);
+    barChart(document.getElementById("salary"), d.salary_by_family.map(r => ({ ...r, label: nice(r.label) })), usd);
+  };
+  draw();
+  let timer; window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(draw, 150); });
+
+  for (const [id, rows, head] of [["weekly-table", d.weekly_by_source, "Week"], ["feed-table", d.feed_by_source, "Day"]]) {
+    const xs = [...new Set(rows.map(r => r.x))].sort();
+    table(document.getElementById(id), [head, ...order.map(s => NAMES[s])],
+          xs.map(w => [w, ...order.map(s => fmt.format((rows.find(r => r.x === w && r.source === s) || { n: 0 }).n))]),
+          order.map((_, i) => i + 1));
+  }
+  table(document.getElementById("family-table"), ["Role family", "Open"], d.open_by_family.map(r => [nice(r.label), fmt.format(r.value)]), [1]);
+  table(document.getElementById("companies-table"), ["Company", "Open"], d.top_companies.map(r => [r.label, fmt.format(r.value)]), [1]);
+  table(document.getElementById("remote-table"), ["Role family", "Remote share", "Open"],
+        d.remote_by_family.map(r => [nice(r.label), pct(r.value), fmt.format(r.n)]), [1, 2]);
+  table(document.getElementById("salary-table"), ["Role family", "Median midpoint", "Postings"],
+        d.salary_by_family.map(r => [nice(r.label), usd(r.value), fmt.format(r.n)]), [1, 2]);
+
+  const hEl = document.getElementById("health"), t = h("table", undefined, hEl);
+  const hr = h("tr", undefined, h("thead", undefined, t));
+  ["Source", "Last run (UTC)", "Rows", "Trailing median", "Status"].forEach((c, i) => h("th", c, hr, [2, 3].includes(i) ? "num" : ""));
+  const tb = h("tbody", undefined, t);
+  d.health.forEach(r => {
+    const row = h("tr", undefined, tb);
+    h("td", NAMES[r.source] || r.source, row); h("td", r.last_run, row);
+    h("td", fmt.format(r.rows), row, "num"); h("td", r.trailing_median == null ? "n/a" : fmt.format(r.trailing_median), row, "num");
+    const st = h("td", undefined, row), s = h("span", undefined, st, "status"), dot = h("span", undefined, s, "dot");
+    const judged = r.reason === "ok" || r.flagged;
+    dot.style.background = r.flagged ? "var(--serious)" : judged ? "var(--good)" : "var(--muted)";
+    s.appendChild(document.createTextNode(r.flagged ? "Flagged: " + r.reason : judged ? "OK" : "Not enough history yet (" + r.reason + ")"));
+  });
+  const f = document.getElementById("footer");
+  f.appendChild(document.createTextNode("Built daily by GitHub Actions from a DuckDB warehouse modeled with dbt. Aggregates only. Source: "));
+  const a = h("a", "github.com/CameronGordonn/jobradar", f); a.href = "https://github.com/CameronGordonn/jobradar";
+}
+
+fetch("data.json").then(r => r.json()).then(render).catch(() => {
+  document.getElementById("scope").textContent = "Could not load data.json.";
+});
+</script>
+</body>
+</html>

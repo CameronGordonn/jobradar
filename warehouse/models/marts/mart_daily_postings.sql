@@ -5,11 +5,15 @@ with jobs as (
 ),
 
 bounds as (
-    select greatest(min(posted_date), current_date - 365) as first_day from jobs
+    -- Run times are UTC and current_date follows the session time zone, so end at whichever is later.
+    select
+        greatest(min(posted_date), current_date - 365) as first_day,
+        greatest(current_date, (select max(started_at)::date from {{ source('jobradar', 'ingest_runs') }})) as last_day
+    from jobs
 ),
 
 days as (
-    select unnest(generate_series((select first_day from bounds), current_date, interval 1 day))::date as day
+    select unnest(generate_series((select first_day from bounds), (select last_day from bounds), interval 1 day))::date as day
 ),
 
 sources as (
