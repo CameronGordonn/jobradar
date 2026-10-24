@@ -8,8 +8,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write    # weekly Parquet backup as a release
   actions: read      # download the previous run's warehouse artifact
+  issues: write      # open an issue when a source's row count drops
   pages: write
   id-token: write
 
@@ -50,22 +51,29 @@ jobs:
           path: ~/.cache/huggingface
           key: hf-bge-small-en-v1.5
 
-      # The warehouse lives in an artifact passed from run to run. If an earlier successful
-      # run exists but its artifact can't be fetched, stop: starting from an empty file would
-      # drop the history.
-      - name: Restore the warehouse from the last successful run
+      # The warehouse is passed from run to run as an artifact (90-day retention). If that is
+      # gone, fall back to the latest weekly Parquet release. If an earlier successful run
+      # exists and neither can be fetched, stop: an empty file would drop the history.
+      - name: Restore the warehouse
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p data
           prev=$(gh run list --workflow daily.yml --status success --limit 1 --json databaseId -q '.[0].databaseId')
-          if [ -z "$prev" ]; then
-            echo "No earlier successful run: starting a new warehouse."
+          if [ -n "$prev" ] && gh run download "$prev" --name warehouse --dir data; then
+            echo "Restored the artifact from run $prev."
           else
-            gh run download "$prev" --name warehouse --dir data || {
-              echo "::error::Run $prev succeeded but its warehouse artifact could not be downloaded (expired after 90 days?)."
+            tag=$(gh release list --limit 50 --json tagName -q '[.[] | select(.tagName | startswith("warehouse-"))][0].tagName')
+            if [ -n "$tag" ]; then
+              gh release download "$tag" --dir restore
+              python -m jobradar.pipeline --db data/warehouse.duckdb restore --dir restore
+              echo "::warning::Artifact unavailable; restored from release $tag (up to a week old)."
+            elif [ -n "$prev" ]; then
+              echo "::error::Run $prev succeeded but neither its artifact nor a backup release could be fetched."
               exit 1
-            }
+            else
+              echo "No earlier successful run or backup: starting a new warehouse."
+            fi
           fi
           ls -la data
 
@@ -76,7 +84,24 @@ jobs:
         run: python -m jobradar.pipeline --db data/warehouse.duckdb ingest
 
       - name: Data quality checks (flags show as warnings on the run)
-        run: python -m jobradar.pipeline --db data/warehouse.duckdb quality
+        run: python -m jobradar.pipeline --db data/warehouse.duckdb quality --flags-out quality_flags.json
+
+      # One open issue per flagged source: comment on it while the problem lasts instead of
+      # opening a new one every day.
+      - name: Open or update an issue for each flagged source
+        continue-on-error: true   # alerting must never block the pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ "$(jq length quality_flags.json)" -gt 0 ] || { echo "No flags."; exit 0; }
+          gh label create data-quality --color d93f0b --description "Pipeline data quality alert" --force
+          jq -c '.[]' quality_flags.json | while read -r f; do
+            src=$(echo "$f" | jq -r .source)
+            body=$(echo "$f" | jq -r '"Run \(.run_id): \(.rows_fetched) rows, trailing median \(.trailing_median). \(.reason)\n\nWorkflow run: '"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"'"')
+            title="Data quality: $src row count dropped"
+            num=$(gh issue list --label data-quality --state open --search "in:title \"$title\"" --json number -q '.[0].number')
+            if [ -n "$num" ]; then gh issue comment "$num" --body "$body"; else gh issue create --title "$title" --label data-quality --body "$body"; fi
+          done
 
       - name: Upload the warehouse (even if a later step fails, so the ingest isn't lost)
         if: always() && hashFiles('data/warehouse.duckdb') != ''
@@ -104,6 +129,18 @@ jobs:
 
       - name: Dashboard
         run: python -m jobradar.pipeline --db data/warehouse.duckdb dashboard --out site
+
+      # Once per ISO week: a Parquet export as a release, so the history outlives the
+      # 90-day artifact retention. Releases are kept; each is a few MB.
+      - name: Weekly Parquet backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="warehouse-$(date -u +%G-W%V)"
+          if gh release view "$tag" > /dev/null 2>&1; then echo "$tag exists"; exit 0; fi
+          python -m jobradar.pipeline --db data/warehouse.duckdb export --out export
+          gh release create "$tag" export/* --title "Warehouse backup $(date -u +%G-W%V)" \
+            --notes "Raw tables, run logs, dedupe clusters and posting history as Parquet. Restore with: python -m jobradar.pipeline --db data/warehouse.duckdb restore --dir <folder>"
 
       - uses: actions/upload-pages-artifact@v3
         with:

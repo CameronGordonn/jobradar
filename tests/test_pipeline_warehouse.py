@@ -101,3 +101,21 @@ def test_dedupe_threshold_rule_and_blind_marking(tmp_path):
     res = dedupe.evaluate(dedupe.read_pairs(path))
     assert res["chosen"]["threshold"] == 0.93 and res["chosen"]["precision_w"] == 1.0
     assert res["chosen"]["recall_w"] == 1.0
+
+
+def test_parquet_export_restore_round_trip(tmp_path):
+    con = db.connect(tmp_path / "w.duckdb", app_tables=False)
+    pipeline.load_fixture_runs(con, FIXTURE)
+    con.execute("CREATE SCHEMA snapshots")
+    con.execute("CREATE TABLE snapshots.snap_postings AS SELECT source_id AS job_id, 1 AS v FROM raw_lever")
+    m = pipeline.export_parquet(con, tmp_path / "export")
+    assert m["rows"]["raw_greenhouse"] == 50 and m["rows"]["snapshots.snap_postings"] == 14
+
+    fresh = db.connect(tmp_path / "restored.duckdb", app_tables=False)
+    pipeline.restore_parquet(fresh, tmp_path / "export")
+    for t in pipeline.BACKUP_TABLES + ["snapshots.snap_postings"]:
+        assert fresh.scalar(f"SELECT COUNT(*) FROM {t}") == con.scalar(f"SELECT COUNT(*) FROM {t}")
+    assert fresh.query("SELECT payload FROM raw_ashby ORDER BY source_id LIMIT 1") == \
+        con.query("SELECT payload FROM raw_ashby ORDER BY source_id LIMIT 1")
+    with pytest.raises(RuntimeError, match="empty warehouse"):
+        pipeline.restore_parquet(fresh, tmp_path / "export")   # never overwrites

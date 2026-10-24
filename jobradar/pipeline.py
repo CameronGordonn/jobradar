@@ -98,6 +98,49 @@ def check_quality(con: DB, run_id: str | None = None) -> list[dict]:
     return checks
 
 
+# ---------- backup ----------
+
+BACKUP_TABLES = [f"raw_{s}" for s in db.RAW_SOURCES] + ["ingest_runs", "quality_checks", "job_clusters"]
+SNAPSHOT_TABLE = "snapshots.snap_postings"
+
+
+def export_parquet(con: DB, out: Path) -> dict:
+    """Everything that can't be rebuilt from the APIs: raw tables, run logs, clusters and the
+    snapshot history. dbt models are rebuilt from these, so they aren't exported."""
+    out.mkdir(parents=True, exist_ok=True)
+    tables = list(BACKUP_TABLES)
+    if con.scalar("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='snapshots' "
+                  "AND table_name='snap_postings'"):
+        tables.append(SNAPSHOT_TABLE)
+    counts = {}
+    for t in tables:
+        path = out / f"{t.replace('.', '__')}.parquet"
+        con.execute(f"COPY (SELECT * FROM {t}) TO '{path}' (FORMAT parquet, COMPRESSION zstd)")
+        counts[t] = con.scalar(f"SELECT COUNT(*) FROM {t}")
+    manifest = {"exported_at": utcnow().isoformat() + "Z", "rows": counts}
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    return manifest
+
+
+def restore_parquet(con: DB, src: Path) -> dict:
+    """Load an export into a warehouse whose tables are empty. Refuses to overwrite data."""
+    manifest = json.loads((src / "manifest.json").read_text())
+    for t in BACKUP_TABLES:
+        if con.scalar(f"SELECT COUNT(*) FROM {t}"):
+            raise RuntimeError(f"{t} already has rows; restore needs an empty warehouse")
+    for t in manifest["rows"]:
+        path = src / f"{t.replace('.', '__')}.parquet"
+        if t == SNAPSHOT_TABLE:
+            con.execute("CREATE SCHEMA IF NOT EXISTS snapshots")
+            con.execute(f"CREATE TABLE {t} AS SELECT * FROM read_parquet('{path}')")
+        else:
+            con.execute(f"INSERT INTO {t} BY NAME SELECT * FROM read_parquet('{path}')")
+        got = con.scalar(f"SELECT COUNT(*) FROM {t}")
+        if got != manifest["rows"][t]:
+            raise RuntimeError(f"{t}: restored {got} rows, manifest says {manifest['rows'][t]}")
+    return manifest
+
+
 # ---------- fixtures (CI) ----------
 
 def load_fixture_runs(con: DB, path: Path) -> int:
@@ -134,10 +177,15 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     ip = sub.add_parser("ingest", help="fetch every source in sources.yaml into the raw tables")
     ip.add_argument("--sources", default="sources.yaml")
-    sub.add_parser("quality", help="flag sources whose row count dropped versus their trailing median")
+    qp = sub.add_parser("quality", help="flag sources whose row count dropped versus their trailing median")
+    qp.add_argument("--flags-out", help="write the flagged checks here as JSON (for the alerting step)")
     fp = sub.add_parser("load-fixtures", help="build a warehouse from the committed synthetic fixture")
     fp.add_argument("--path", default="tests/fixtures/warehouse/runs.json")
     sub.add_parser("init", help="create empty warehouse tables")
+    xp = sub.add_parser("export", help="write raw tables, run logs and snapshot history to Parquet")
+    xp.add_argument("--out", default="export")
+    rp = sub.add_parser("restore", help="load a Parquet export into an empty warehouse")
+    rp.add_argument("--dir", default="export")
     dp = sub.add_parser("dedupe-candidates", help="draw 50 same-company pairs across the similarity range to mark")
     dp.add_argument("--out", default="data/dedupe_pairs.csv")
     mp = sub.add_parser("dedupe-mark", help="mark candidate pairs same/different (similarity hidden)")
@@ -169,6 +217,10 @@ def main(argv=None):
             line = f"{c['source']}: {c['rows_fetched']} rows, trailing median {c['trailing_median']}, {c['reason']}"
             # GitHub Actions shows ::warning:: lines as annotations on the run.
             print(f"::warning title=Data quality::{line}" if c["flagged"] else line)
+        if args.flags_out:
+            Path(args.flags_out).write_text(json.dumps(
+                [{k: c[k] for k in ("run_id", "source", "rows_fetched", "trailing_median", "reason")}
+                 for c in checks if c["flagged"]], indent=2))
     elif args.cmd == "load-fixtures":
         print(f"loaded {load_fixture_runs(con, Path(args.path))} fixture runs into {args.db}")
     elif args.cmd == "dedupe-candidates":
@@ -202,6 +254,12 @@ def main(argv=None):
                   f"(raw tp={c['tp']} fp={c['fp']} fn={c['fn']}). Collapses {res['collapsed_share']:.1%} of "
                   f"{len(jobs)} open postings ({res['collapsed_share_exact_only']:.1%} from exact matches alone). "
                   f"Wrote {out}.")
+    elif args.cmd == "export":
+        m = export_parquet(con, Path(args.out))
+        print(f"exported {sum(m['rows'].values())} rows from {len(m['rows'])} tables to {args.out}")
+    elif args.cmd == "restore":
+        m = restore_parquet(con, Path(args.dir))
+        print(f"restored {sum(m['rows'].values())} rows from the export made {m['exported_at']}")
     elif args.cmd == "dashboard":
         from . import dashboard
         d = dashboard.build(con, Path(args.sources), Path(args.out))
