@@ -76,7 +76,7 @@ def _rerank_rows(cfg, con, rows, client=None):
     if not rows:
         return 0
     rcfg = cfg.get("rerank", {})
-    model = rcfg.get("model", "claude-haiku-4-5-20251001")
+    model = rcfg.get("model", "claude-haiku-5-5")
     if client is None:
         client, system, tool = _client_and_prompt(cfg)
     else:
