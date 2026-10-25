@@ -29,7 +29,7 @@ A job-search pipeline I built with Claude Code and run every morning in my own s
 | How are duplicate postings handled? | An embedding-similarity threshold failed its pre-set acceptance rule, catching 3 of 16 marked duplicates. A same-company, same-title rule then matched 30 of 30 fresh hand-checked pairs and collapses 19% of open postings. Those marks were made from titles and locations, and the descriptions of some merged pairs differ (several are translations), so a few merges may join different teams. The rule affects dashboard counts only; ranking and the tracker treat postings as duplicates only with the same company, title, and location. |
 | What did the evaluation cost? | $2.30 in API calls. |
 
-The engineering lesson so far: the losses came from operations (no scheduled run for three weeks, then a backlog cap), not from the ranking model. The main caveats: one person labeled everything, two thirds of the labeled postings come from five large employers, and the relabeling round that measures my own consistency opens Oct 31.
+The engineering lesson so far: the losses came from operations (no scheduled run for three weeks, then a backlog cap), not from the ranking model. The main caveats: one person labeled everything, quickly (a median 5 seconds per label, from an excerpt), two thirds of the labeled postings come from five large employers, and the relabeling round that measures my own consistency opens Oct 31.
 
 **Stack:** Python, SQL, DuckDB, dbt, GitHub Actions, GitHub Pages, Claude API (Anthropic SDK), scikit-learn, sentence-transformers, and pytest.
 
@@ -68,7 +68,7 @@ The public half needs only `sources.yaml` and never touches the personal half. L
 | Stage | What it does |
 |---|---|
 | 0. Hard filters | Title words (senior, staff, intern, and non-technical sales titles such as Account Executive), employer (military departments), location allow and block lists, the source's country field, clearance wording, minimum years of experience, and USAJOBS hiring path and GS grade. Biased toward keeping postings. |
-| 1. Recall | TF-IDF (words and word pairs) cosine against each resume variant, best match kept. It only breaks ties now: each run sends up to `recall.top_k` unscored postings still on their boards (40 in the example config), oldest first, and the rest wait for later runs. A posting counts as closed when it is more than 2 days behind its own source's latest load. |
+| 1. Recall | TF-IDF (words and word pairs) cosine against each resume variant, best match kept. It only breaks ties now: each run sends up to `recall.top_k` unscored postings still on their boards (40 in the example config), oldest first, and the rest wait for later runs. A posting counts as closed when it is more than 2 days behind its own board's latest load, or when its board has loaded nothing for 7 days while the rest of its source has. |
 | 2. Rerank | Claude reads the posting against the rubric and resumes and returns a 0-10 fit score, a recommendation, gaps, and an opening line through a tool call. One posting per call. The rubric and resumes are a cached system prompt. |
 | Digest | The top 10 new postings above the fit threshold, as markdown. |
 | Tracker | A local page over the same database: an inbox of scored postings still open, the application pipeline, and weekly reply rates. |
@@ -154,6 +154,7 @@ To build the warehouse locally: `pip install -r requirements-pipeline.txt`, then
 - TF-IDF weights shift as the corpus grows, so recall scores aren't comparable across weeks. The eval uses scores frozen when the label sets were drawn.
 - Both embedding models truncate long postings (512 and 256 tokens).
 - One labeler. The eval measures how well the rankers match one person's judgment, bounded by that person's consistency.
+- Fast labels. Timed between saves, with two breaks of 11 and 37 minutes left out, the median label took 5 seconds: 4 for a no (194 of 230), 16 for a maybe, and 23 for an apply. The screen shows an excerpt, a median 2,254 characters of a 6,715-character posting. The full text is one key away, but whether it was opened isn't logged.
 
 ## License
 

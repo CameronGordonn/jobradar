@@ -113,14 +113,30 @@ def utcnow() -> datetime:
 
 
 OPEN_GRACE_DAYS = 2
+BOARD_GONE_DAYS = 7
 
 
-def still_open(alias: str = "j", days: int = OPEN_GRACE_DAYS) -> str:
-    """SQL condition: the posting was seen within `days` of its own source's latest load. Per
-    source, not a global clock, so when one source stops loading for a while its postings are
-    not taken for closed. (A posting gone from a board that still loads is closed.)"""
-    return (f"(CAST({alias}.last_seen AS TIMESTAMPTZ) >= (SELECT max(CAST(x.last_seen AS TIMESTAMPTZ)) FROM jobs x "
-            f"WHERE x.source = {alias}.source) - INTERVAL {int(days)} DAY)")
+def _board(alias: str) -> str:
+    """The board a posting came from: the source_id prefix ("<token>:<id>" on Greenhouse, Lever
+    and Ashby). NULL for USAJOBS, whose ids carry no prefix, so it is one board per source."""
+    return f"(CASE WHEN strpos({alias}.source_id, ':') > 0 THEN split_part({alias}.source_id, ':', 1) END)"
+
+
+def still_open(alias: str = "j", days: int = OPEN_GRACE_DAYS, gone_days: int = BOARD_GONE_DAYS) -> str:
+    """SQL condition: the posting was seen within `days` of its own board's latest load, and that
+    board loaded within `gone_days` of its source's latest load.
+
+    Per board, because boards fail one at a time: a timeout on one Greenhouse token is logged and
+    skipped while the rest load, and a per-source clock would close every posting on it. But a
+    board that empties for real (Overstory moved to Ashby) also stops advancing, and per board
+    alone would keep its last postings open forever. Nothing in jobs tells the two apart, so a
+    board silent for more than `gone_days` while its source loads counts as gone."""
+    seen = f"CAST({alias}.last_seen AS TIMESTAMPTZ)"
+    latest = "(SELECT max(CAST(x.last_seen AS TIMESTAMPTZ)) FROM jobs x WHERE x.source = {a}.source{extra})"
+    board = latest.format(a=alias, extra=f" AND {_board('x')} IS NOT DISTINCT FROM {_board(alias)}")
+    source = latest.format(a=alias, extra="")
+    return (f"({seen} >= {board} - INTERVAL {int(days)} DAY "
+            f"AND {board} >= {source} - INTERVAL {int(gone_days)} DAY)")
 
 
 class DB:
