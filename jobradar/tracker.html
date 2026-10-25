@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Hunt</title>
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
+  --accent: #2f6f5e; --accent-ink: #ffffff; --warn: #a15c00; --warn-bg: #fff3e0;
+  --bad: #a3302a; --bad-bg: #fdecea; --good: #2f6f5e; --good-bg: #e6f2ee; --chip: #efeee9;
+  --cv: #5b5bd6; --geospatial: #2c7a9b; --climate: #3f8a3a; --energy: #b07a00; --sports: #b0465a; --general: #6b6b66;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161615; --panel: #1f1f1d; --ink: #ecebe6; --muted: #a09f98; --line: #34332f;
+    --accent: #6fbfa6; --accent-ink: #10201b; --warn: #f0b463; --warn-bg: #3a2c16;
+    --bad: #f08a83; --bad-bg: #3b1d1b; --good: #6fbfa6; --good-bg: #17302a; --chip: #2a2a27;
+    --cv: #9d9df2; --geospatial: #6db8d6; --climate: #86c97f; --energy: #e2b54a; --sports: #e58b9c; --general: #a09f98;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1100px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+h1 { font-size: 17px; margin: 0 8px 0 0; }
+nav { display: flex; gap: 4px; }
+nav button, .chip, button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+nav button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:focus-visible, .chip:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.spacer { flex: 1; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.chip { padding: 4px 10px; border-radius: 999px; background: var(--chip); border-color: transparent; font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+input, select, textarea { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+input[type="search"] { min-width: 200px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+.card h3 { margin: 0; font-size: 16px; }
+.card h3 a { color: inherit; text-decoration: none; }
+.card h3 a:hover { text-decoration: underline; }
+.meta { display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; margin-top: 4px; font-size: 13px; color: var(--muted); }
+.badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--chip); color: var(--ink); white-space: nowrap; }
+.badge.area { color: #fff; }
+.badge.new { background: var(--good-bg); color: var(--good); }
+.badge.ref { background: var(--warn-bg); color: var(--warn); }
+.badge.bad { background: var(--bad-bg); color: var(--bad); }
+.fit { font-weight: 600; font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 6px; background: var(--chip); color: var(--ink); }
+.fit.hi { background: var(--good-bg); color: var(--good); }
+.top { display: flex; gap: 12px; align-items: flex-start; }
+.top > div:first-child { flex: 1; min-width: 0; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.why { margin: 8px 0 0; }
+.why dt { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 8px; }
+.why dd { margin: 2px 0 0; }
+.why ul { margin: 2px 0 0; padding-left: 18px; }
+.deal { color: var(--bad); }
+.pitch { border-left: 3px solid var(--line); padding-left: 10px; }
+.caveat { font-size: 12px; color: var(--warn); }
+.posting { white-space: pre-wrap; font-size: 13px; max-height: 420px; overflow: auto; background: var(--bg); border-radius: 8px; padding: 10px; margin-top: 8px; }
+.cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.col h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; }
+.col .card { padding: 12px; }
+.col textarea { width: 100%; min-height: 54px; margin-top: 8px; font-size: 13px; }
+.row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.tile .v { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .l { font-size: 13px; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; font-size: 14px; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+.barcell { width: 40%; }
+.bars { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--chip); }
+.bars span { display: block; height: 100%; }
+.bars .a { background: var(--line); } .bars .r { background: var(--energy); } .bars .i { background: var(--accent); }
+h2.section { font-size: 15px; margin: 6px 0 8px; }
+.empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); width: min(520px, calc(100vw - 32px)); padding: 18px; }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog label { display: block; font-size: 13px; color: var(--muted); margin-top: 10px; }
+dialog input, dialog textarea, dialog select { width: 100%; margin-top: 3px; }
+#toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+#toast.show { opacity: 1; }
+@media (max-width: 860px) { .cols { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .cols { grid-template-columns: 1fr; } .top { flex-direction: column; } input[type="search"] { min-width: 0; width: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Job hunt</h1>
+    <nav role="tablist">
+      <button role="tab" data-tab="inbox" aria-selected="true">Inbox <span id="n-inbox" class="muted"></span></button>
+      <button role="tab" data-tab="pipeline" aria-selected="false">Pipeline <span id="n-pipe" class="muted"></span></button>
+      <button role="tab" data-tab="stats" aria-selected="false">Stats</button>
+    </nav>
+    <span class="spacer"></span>
+    <button class="primary" id="add">Add a job</button>
+  </div>
+</header>
+<main>
+  <section id="tab-inbox">
+    <div class="filters">
+      <span id="areas"></span>
+      <label class="small muted">Fit at least
+        <select id="minfit"><option>5</option><option selected>6</option><option>7</option><option>8</option></select>
+      </label>
+      <label class="small muted"><input type="checkbox" id="newonly"> New only</label>
+      <input type="search" id="q" placeholder="Search title or company">
+    </div>
+    <div id="inbox"></div>
+  </section>
+  <section id="tab-pipeline" hidden>
+    <div class="filters"><span id="pareas"></span></div>
+    <div class="cols" id="cols"></div>
+    <details id="closed-wrap"><summary>Closed (rejected, withdrawn) <span id="n-closed"></span></summary><div id="closed" style="margin-top:10px"></div></details>
+  </section>
+  <section id="tab-stats" hidden><div id="stats"></div></section>
+</main>
+
+<dialog id="dlg">
+  <form method="dialog" id="addform">
+    <h2 class="section">Add a job by hand</h2>
+    <p class="small muted" style="margin:0">For roles that came through a person or a site the pipeline doesn't read. They skip scoring.</p>
+    <label>Title <input name="title" required></label>
+    <label>Company <input name="org" required></label>
+    <label>Link <input name="url" type="url" placeholder="https://"></label>
+    <label>Location <input name="location"></label>
+    <label>Referral contact <input name="referral" placeholder="Who is making the case for you"></label>
+    <label>Note <textarea name="note" rows="2"></textarea></label>
+    <label>Status <select name="status"><option value="saved">Saved</option><option value="applied">Applied</option><option value="interviewing">Interviewing</option></select></label>
+    <div class="actions" style="justify-content:flex-end">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" value="ok">Add</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const AREAS = ["cv", "geospatial", "climate", "energy", "sports", "general"];
+const AREA_LABEL = {cv: "CV & robotics", geospatial: "Geospatial", climate: "Climate", energy: "Energy", sports: "Sports", general: "General"};
+const COLS = [["saved", "Saved"], ["applied", "Applied"], ["interviewing", "Interviewing"], ["offer", "Offer"]];
+const state = {tab: "inbox", area: null, parea: null, inbox: [], pipe: []};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const day = s => {
+  if (!s) return "";
+  const d = new Date(s), sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, sameYear ? {month: "short", day: "numeric"} : {month: "short", day: "numeric", year: "numeric"});
+};
+const pct = x => x == null ? "–" : Math.round(x * 100) + "%";
+
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2200); }
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { toast(j.error || "Something went wrong"); throw new Error(j.error); }
+  return j;
+}
+
+function areaBadge(a) { return `<span class="badge area" style="background:var(--${a})">${esc(AREA_LABEL[a] || a)}</span>`; }
+function chips(el, current, onPick, rows) {
+  const counts = {}; rows.forEach(r => counts[r.area] = (counts[r.area] || 0) + 1);
+  el.innerHTML = [`<button class="chip" aria-pressed="${current == null}" data-a="">All ${rows.length}</button>`]
+    .concat(AREAS.filter(a => counts[a]).map(a => `<button class="chip" aria-pressed="${current === a}" data-a="${a}">${AREA_LABEL[a]} ${counts[a]}</button>`)).join(" ");
+  el.querySelectorAll(".chip").forEach(b => b.onclick = () => onPick(b.dataset.a || null));
+}
+
+// ---------- inbox ----------
+async function loadInbox() {
+  state.inbox = await api(`/api/inbox?min_fit=${$("#minfit").value}`);
+  $("#n-inbox").textContent = state.inbox.length;
+  renderInbox();
+}
+function renderInbox() {
+  const q = $("#q").value.trim().toLowerCase(), newOnly = $("#newonly").checked;
+  let rows = state.inbox.filter(r => (!newOnly || r.is_new) && (!q || (r.title + " " + r.org).toLowerCase().includes(q)));
+  chips($("#areas"), state.area, a => { state.area = a; renderInbox(); }, rows);
+  if (state.area) rows = rows.filter(r => r.area === state.area);
+  $("#inbox").innerHTML = rows.length ? rows.map(card).join("") : `<div class="empty">Nothing waiting at this fit level. Lower the threshold or check back after the 7am run.</div>`;
+  $("#inbox").querySelectorAll("[data-act]").forEach(b => b.onclick = () => act(b.dataset.key, b.dataset.act));
+  $("#inbox").querySelectorAll("details.posting-wrap").forEach(d => d.ontoggle = () => d.open && loadPosting(d));
+}
+function card(r) {
+  const gaps = r.gaps.length ? `<dt>Gaps</dt><dd><ul>${r.gaps.map(g => `<li>${esc(g)}</li>`).join("")}</ul></dd>` : "";
+  const deal = r.dealbreakers.length ? `<dt>Dealbreakers</dt><dd class="deal"><ul>${r.dealbreakers.map(g => `<li>${esc(g)}</li>`).join("")}</ul></dd>` : "";
+  return `<article class="card">
+    <div class="top"><div>
+      <h3><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a></h3>
+      <div class="meta"><strong style="color:var(--ink)">${esc(r.org)}</strong><span>${esc(r.location)}</span>${areaBadge(r.area)}
+        ${r.is_new ? `<span class="badge new">New</span>` : ""}${r.referral ? `<span class="badge ref">Referral: ${esc(r.referral)}</span>` : ""}
+        ${r.closes ? `<span>Closes ${day(r.closes)}</span>` : ""}<span>Resume: ${esc(r.variant)}</span></div>
+    </div><span class="fit ${r.fit >= 7 ? "hi" : ""}" title="Claude fit score, ${esc(r.recommend)}">${r.fit}/10</span></div>
+    <dl class="why"><dt>Why it fits</dt><dd>${esc(r.evidence)}</dd>${gaps}${deal}</dl>
+    <details><summary>Opening line</summary><p class="pitch">${esc(r.pitch)}</p>
+      <p class="caveat">Written by the model. Check every claim against your resume before you use it.</p></details>
+    <details class="posting-wrap" data-key="${esc(r.key)}"><summary>Posting</summary><div class="posting">Loading…</div></details>
+    <div class="actions">
+      <button class="primary" data-act="saved" data-key="${esc(r.key)}">Save</button>
+      <button data-act="applied" data-key="${esc(r.key)}">Applied</button>
+      <button data-act="skipped" data-key="${esc(r.key)}">Not for me</button>
+    </div></article>`;
+}
+async function loadPosting(d) {
+  if (d.dataset.loaded) return;
+  const j = await api(`/api/job?key=${encodeURIComponent(d.dataset.key)}`);
+  d.querySelector(".posting").textContent = (j && j.description) || "No description stored.";
+  d.dataset.loaded = 1;
+}
+async function act(key, status) {
+  let note = null;
+  if (status === "skipped") note = prompt("Why not? (optional, helps tune the ranking later)") || null;
+  await api("/api/status", {key, status, note});
+  state.inbox = state.inbox.filter(r => r.key !== key);
+  $("#n-inbox").textContent = state.inbox.length;
+  renderInbox();
+  toast(status === "skipped" ? "Skipped" : `Moved to ${status}`);
+  loadPipeline();
+}
+
+// ---------- pipeline ----------
+async function loadPipeline() {
+  state.pipe = await api("/api/pipeline");
+  $("#n-pipe").textContent = state.pipe.filter(r => !["rejected", "withdrawn"].includes(r.status)).length;
+  renderPipeline();
+}
+function renderPipeline() {
+  chips($("#pareas"), state.parea, a => { state.parea = a; renderPipeline(); }, state.pipe);
+  const rows = state.parea ? state.pipe.filter(r => r.area === state.parea) : state.pipe;
+  $("#cols").innerHTML = COLS.map(([s, label]) => {
+    const items = rows.filter(r => r.status === s);
+    return `<div class="col"><h2>${label} ${items.length}</h2>${items.map(pcard).join("") || `<p class="small muted">None</p>`}</div>`;
+  }).join("");
+  const closed = rows.filter(r => ["rejected", "withdrawn"].includes(r.status));
+  $("#n-closed").textContent = closed.length;
+  $("#closed").innerHTML = closed.map(pcard).join("") || `<p class="small muted">None</p>`;
+  document.querySelectorAll("select[data-key]").forEach(s => s.onchange = async () => {
+    await api("/api/status", {key: s.dataset.key, status: s.value}); toast(`Moved to ${s.value}`); loadPipeline();
+  });
+  document.querySelectorAll("textarea[data-key]").forEach(t => t.onchange = async () => {
+    await api("/api/fields", {key: t.dataset.key, note: t.value}); toast("Note saved");
+  });
+}
+function pcard(r) {
+  const opts = ["saved", "applied", "interviewing", "offer", "rejected", "withdrawn"]
+    .map(s => `<option ${s === r.status ? "selected" : ""}>${s}</option>`).join("");
+  const when = r.applied_at ? `Applied ${day(r.applied_at)}` : `Saved ${day(r.created_at)}`;
+  return `<article class="card">
+    <h3 style="font-size:15px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a></h3>
+    <div class="meta"><strong style="color:var(--ink)">${esc(r.org)}</strong>${areaBadge(r.area)}${r.fit != null ? `<span>Fit ${r.fit}</span>` : `<span>Added by hand</span>`}</div>
+    <div class="meta">${when}${r.days_idle > 0 ? ` · no change in ${r.days_idle} d` : ""}</div>
+    <div class="meta">${r.follow_up ? `<span class="badge ref">Follow up</span>` : ""}${r.posting_closed ? `<span class="badge bad">Posting closed</span>` : ""}${r.referral ? `<span class="badge ref">Referral: ${esc(r.referral)}</span>` : ""}</div>
+    <div class="row"><select data-key="${esc(r.key)}" aria-label="Status">${opts}</select></div>
+    <textarea data-key="${esc(r.key)}" placeholder="Notes: contact, next step, interview dates" aria-label="Notes">${esc(r.note)}</textarea>
+  </article>`;
+}
+
+// ---------- stats ----------
+async function loadStats() {
+  const s = await api("/api/stats"), c = s.status_counts, t = s.total;
+  const followUps = state.pipe.filter(r => r.follow_up).length;
+  const tiles = [
+    [s.applied_this_week + (s.weekly_goal ? ` / ${s.weekly_goal}` : ""), "Applied this week"],
+    [t.applied, "Applied in total"], [pct(t.response_rate), "Got a reply"], [pct(t.interview_rate), "Reached an interview"],
+    [s.median_days_to_reply == null ? "–" : s.median_days_to_reply + " d", "Median wait for a reply"],
+    [followUps, "Follow-ups due"], [(c.saved || 0), "Saved, not yet sent"]];
+  const max = Math.max(1, ...s.by_week.map(w => w.applied));
+  const bar = w => `<div class="bars" title="${w.applied} applied, ${w.responded} replied, ${w.interviewed} interviews">
+      <span class="i" style="width:${w.interviewed / max * 100}%"></span><span class="r" style="width:${(w.responded - w.interviewed) / max * 100}%"></span><span class="a" style="width:${(w.applied - w.responded) / max * 100}%"></span></div>`;
+  const table = (rows, first) => rows.length ? `<table><thead><tr><th>${first}</th><th>Applied</th><th>Replied</th><th>Interviews</th><th>Reply rate</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${esc(AREA_LABEL[r.name] || r.name)}</td><td>${r.applied}</td><td>${r.responded}</td><td>${r.interviewed}</td><td>${pct(r.response_rate)}</td></tr>`).join("")}</tbody></table>` : "";
+  $("#stats").innerHTML = `<div class="tiles">${tiles.map(([v, l]) => `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("")}</div>` +
+    (s.by_week.length ? `<h2 class="section">By week applied</h2><p class="small muted">Green: reached an interview. Amber: replied without one, usually a rejection. Grey: no reply yet.</p>
+      <table><thead><tr><th>Week of</th><th>Applied</th><th>Replied</th><th>Interviews</th><th class="barcell"></th></tr></thead><tbody>${
+      s.by_week.slice().reverse().map(w => `<tr><td>${day(w.week)}</td><td>${w.applied}</td><td>${w.responded}</td><td>${w.interviewed}</td><td class="barcell">${bar(w)}</td></tr>`).join("")}</tbody></table>
+      <h2 class="section">By area</h2>${table(s.by_area, "Area")}<h2 class="section">By resume</h2>${table(s.by_variant, "Resume")}`
+    : `<div class="empty">No applications yet. Mark a job Applied and the numbers start here.</div>`);
+}
+
+// ---------- wiring ----------
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  state.tab = b.dataset.tab;
+  document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x === b));
+  ["inbox", "pipeline", "stats"].forEach(t => $(`#tab-${t}`).hidden = t !== state.tab);
+  if (state.tab === "stats") loadStats();
+});
+$("#minfit").onchange = loadInbox;
+$("#newonly").onchange = renderInbox;
+$("#q").oninput = renderInbox;
+$("#add").onclick = () => { $("#addform").reset(); $("#dlg").showModal(); };
+$("#dlg").addEventListener("close", async () => {
+  if ($("#dlg").returnValue !== "ok") return;
+  const body = Object.fromEntries(new FormData($("#addform")));
+  await api("/api/manual", body); toast("Added"); loadPipeline();
+});
+loadInbox(); loadPipeline();
+</script>
+</body>
+</html>

@@ -266,6 +266,12 @@ def cmd_probe(cfg, con, args):
 
 # ---------- entry ----------
 
+def cmd_tracker(cfg, con, args):
+    """Opens the database per request, never holding it, so the daily run isn't blocked."""
+    from . import tracker
+    tracker.serve(cfg, args.port)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="jobradar")
     ap.add_argument("--config", default="config.yaml")
@@ -298,6 +304,8 @@ def main(argv=None):
     pp.add_argument("source", choices=sorted(BOARDS))
     pp.add_argument("token")
     sub.add_parser("probe-greenhouse").add_argument("token")
+    tp = sub.add_parser("tracker", help="local job-hunt page: inbox, application pipeline, stats")
+    tp.add_argument("--port", type=int, default=8765)
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -305,12 +313,14 @@ def main(argv=None):
     cfg = load_config(args.config)
     # Labeling only touches the labels file, so a long session never holds the main DB's
     # write lock (DuckDB allows one writer) while the daily run needs it.
-    # eval-score opens the main DB itself, briefly, so a long batch doesn't hold its lock.
-    con = None if args.cmd in ("label", "label-status", "eval-embed", "eval-score") else db.connect(cfg["db_path"])
+    # eval-score opens the main DB itself, briefly, so a long batch doesn't hold its lock;
+    # the tracker opens it per request.
+    no_db = ("label", "label-status", "eval-embed", "eval-score", "tracker")
+    con = None if args.cmd in no_db else db.connect(cfg["db_path"])
     {"ingest": cmd_ingest, "score": cmd_score, "digest": cmd_digest, "run": cmd_run,
      "label": cmd_label, "label-sample": cmd_label_sample, "label-status": cmd_label_status,
      "eval": cmd_eval, "eval-embed": cmd_eval_embed, "eval-score": cmd_eval_score,
-     "probe": cmd_probe, "probe-greenhouse": cmd_probe}[args.cmd](cfg, con, args)
+     "probe": cmd_probe, "probe-greenhouse": cmd_probe, "tracker": cmd_tracker}[args.cmd](cfg, con, args)
 
 
 if __name__ == "__main__":

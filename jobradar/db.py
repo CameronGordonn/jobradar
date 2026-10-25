@@ -84,6 +84,18 @@ CREATE TABLE IF NOT EXISTS digested (
     key VARCHAR PRIMARY KEY,
     digest_date VARCHAR
 );
+-- The job hunt itself (tracker.py). One row per job acted on; jobs added by hand live in
+-- jobs with source 'manual' and filter_reason 'manual', so they are never sent to Claude.
+CREATE TABLE IF NOT EXISTS applications (
+    key VARCHAR PRIMARY KEY,
+    status VARCHAR,                -- saved, applied, interviewing, offer, rejected, withdrawn, skipped
+    note VARCHAR, referral VARCHAR,
+    created_at VARCHAR, updated_at VARCHAR,
+    applied_at VARCHAR             -- first time it reached applied (or later), for the weekly stats
+);
+CREATE TABLE IF NOT EXISTS application_events (
+    key VARCHAR, status VARCHAR, happened_at VARCHAR
+);
 """
 SCHEMA = WAREHOUSE_SCHEMA + APP_SCHEMA
 

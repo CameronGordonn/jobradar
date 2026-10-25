@@ -43,3 +43,10 @@ digest:
   top_n: 10
   min_fit: 6
   out_dir: digests
+
+# Local job-hunt page (python -m jobradar.cli tracker).
+tracker:
+  # Company (whole word, matched against the posting's company) -> who can make the case for you.
+  referrals:
+    "Example Corp": "Pat Lee (engineering manager)"
+  # weekly_goal: 10    # applications per week, shown on the Stats tab
