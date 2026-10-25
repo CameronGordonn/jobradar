@@ -4,7 +4,7 @@
 [![daily pipeline](https://github.com/CameronGordonn/jobradar/actions/workflows/daily.yml/badge.svg)](https://github.com/CameronGordonn/jobradar/actions/workflows/daily.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A job-search pipeline I built and run every morning in my own search. It pulls about 5,600 postings a day from USAJOBS and 64 company job boards, ranks them against my resumes with the Claude API, and loads the same postings into a tested dbt warehouse that feeds a public dashboard.
+A job-search pipeline I built with Claude Code and run every morning in my own search. It pulls about 5,600 postings a day from USAJOBS and 64 company job boards, ranks them against my resumes with the Claude API, and loads the same postings into a tested dbt warehouse that feeds a public dashboard.
 
 **[Live dashboard](https://camerongordonn.github.io/jobradar/)** · [Evaluation results](results/eval_summary.md) · [dbt docs](https://camerongordonn.github.io/jobradar/dbt/)
 
@@ -124,7 +124,7 @@ cp rubric.example.md rubric.md           # fill in the candidate section (gitign
 python -m jobradar.cli run               # ingest -> score -> digest; writes digests/YYYY-MM-DD.md
 ```
 
-Resumes go in `resumes/` as plain text. Boards go in `sources.yaml`; check a token first with `python -m jobradar.cli probe greenhouse|lever|ashby <token>`. `scripts/daily_run.sh` runs the pipeline from cron or Windows Task Scheduler (through WSL), appends to `data/run.log`, refuses to overlap a running job, and exits non-zero if scoring fails. Claude spend is capped at `recall.top_k` calls per run.
+Resumes go in `resumes/` as plain text or as the HTML you print to PDF (read as text, with email and phone numbers removed). Boards go in `sources.yaml`; check a token first with `python -m jobradar.cli probe greenhouse|lever|ashby <token>`. `scripts/daily_run.sh` runs the pipeline from cron or Windows Task Scheduler (through WSL), appends to `data/run.log`, refuses to overlap a running job, and exits non-zero if scoring fails. Claude spend is capped at `recall.top_k` calls per run.
 
 ### Job-hunt tracker
 
