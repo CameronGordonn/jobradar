@@ -23,88 +23,89 @@ sources:
     enabled: true
     # token = the slug in boards.greenhouse.io/<token>. Check each with:
     #   python -m jobradar.cli probe greenhouse <token>
-    # Entries starting with REPLACE are skipped.
+    # Entries starting with REPLACE are skipped. area (cv, geospatial, climate, energy, sports, general)
+    # groups postings in the tracker.
     boards:
       # Computer vision, robotics, autonomy
-      - {token: samsara, name: "Samsara"}
-      - {token: gomotive, name: "Motive"}
-      - {token: nuro, name: "Nuro"}
-      - {token: figureai, name: "Figure AI"}
-      - {token: motional, name: "Motional"}
-      - {token: voxel51, name: "Voxel51"}               # CV dataset tooling
-      - {token: hover, name: "Hover"}                   # 3D home models from phone photos
+      - {token: samsara, name: "Samsara", area: cv}
+      - {token: gomotive, name: "Motive", area: cv}
+      - {token: nuro, name: "Nuro", area: cv}
+      - {token: figureai, name: "Figure AI", area: cv}
+      - {token: motional, name: "Motional", area: cv}
+      - {token: voxel51, name: "Voxel51", area: cv}               # CV dataset tooling
+      - {token: hover, name: "Hover", area: cv}                   # 3D home models from phone photos
       # Geospatial, remote sensing, weather, energy
-      - {token: planetlabs, name: "Planet Labs"}
-      - {token: tomorrow, name: "Tomorrow.io"}
-      - {token: fervoenergy, name: "Fervo Energy"}
-      - {token: muonspace, name: "Muon Space"}          # climate and wildfire satellites
-      - {token: zestyai, name: "Zesty.ai"}              # property climate risk from aerial imagery
-      - {token: aidashinc, name: "AiDash"}              # satellite vegetation management for utilities
-      - {token: redwoodmaterials, name: "Redwood Materials"}  # battery recycling, energy storage
-      - {token: antora, name: "Antora Energy"}          # thermal batteries
-      - {token: rondoenergy, name: "Rondo Energy"}      # heat batteries
-      - {token: lunarenergy, name: "Lunar Energy"}      # home batteries
-      - {token: energyhub, name: "EnergyHub"}           # distributed energy management
-      - {token: relae, name: "Relae (formerly Pachama)"}  # energy and climate advisory, carbon project review
+      - {token: planetlabs, name: "Planet Labs", area: geospatial}
+      - {token: tomorrow, name: "Tomorrow.io", area: climate}
+      - {token: fervoenergy, name: "Fervo Energy", area: energy}
+      - {token: muonspace, name: "Muon Space", area: geospatial}          # climate and wildfire satellites
+      - {token: zestyai, name: "Zesty.ai", area: geospatial}              # property climate risk from aerial imagery
+      - {token: aidashinc, name: "AiDash", area: geospatial}              # satellite vegetation management for utilities
+      - {token: redwoodmaterials, name: "Redwood Materials", area: energy}  # battery recycling, energy storage
+      - {token: antora, name: "Antora Energy", area: energy}          # thermal batteries
+      - {token: rondoenergy, name: "Rondo Energy", area: energy}      # heat batteries
+      - {token: lunarenergy, name: "Lunar Energy", area: energy}      # home batteries
+      - {token: energyhub, name: "EnergyHub", area: energy}           # distributed energy management
+      - {token: relae, name: "Relae (formerly Pachama)", area: climate}  # energy and climate advisory, carbon project review
       # Found through climate VC portfolio boards (Elemental, Prelude, EIP, Clean Energy Ventures, Overture), Oct 2026
-      - {token: mill, name: "Mill"}                     # household food waste
-      - {token: eh2, name: "Electric Hydrogen"}         # green hydrogen electrolyzers
-      - {token: placerlabs, name: "Placer.ai"}          # location analytics
-      - {token: sparkfund, name: "Sparkfund"}           # energy efficiency financing
-      - {token: ampsortation, name: "AMP"}              # CV-guided recycling robots
+      - {token: mill, name: "Mill", area: climate}                     # household food waste
+      - {token: eh2, name: "Electric Hydrogen", area: energy}         # green hydrogen electrolyzers
+      - {token: placerlabs, name: "Placer.ai", area: geospatial}          # location analytics
+      - {token: sparkfund, name: "Sparkfund", area: energy}           # energy efficiency financing
+      - {token: ampsortation, name: "AMP", area: cv}              # CV-guided recycling robots
       # Sports analytics
-      - {token: hudl, name: "Hudl"}
-      - {token: geniussports, name: "Genius Sports"}
-      - {token: catapultsports, name: "Catapult"}       # athlete tracking
+      - {token: hudl, name: "Hudl", area: sports}
+      - {token: geniussports, name: "Genius Sports", area: sports}
+      - {token: catapultsports, name: "Catapult", area: sports}       # athlete tracking
       # General ML / data
-      - {token: anthropic, name: "Anthropic"}
-      - {token: databricks, name: "Databricks"}
-      - {token: flexport, name: "Flexport"}
+      - {token: anthropic, name: "Anthropic", area: general}
+      - {token: databricks, name: "Databricks", area: general}
+      - {token: flexport, name: "Flexport", area: general}
 
   # token = the name in jobs.lever.co/<token>. Check with: python -m jobradar.cli probe lever <token>
   lever:
     enabled: true
     boards:
-      - {token: voltus, name: "Voltus"}            # demand response / grid flexibility
-      - {token: arcadia, name: "Arcadia"}          # utility data, community solar
-      - {token: bedrockenergy, name: "Bedrock Energy"}  # geothermal heating and cooling
-      - {token: arable, name: "Arable"}            # in-field crop and weather sensing
-      - {token: gridware, name: "Gridware"}        # grid sensing, wildfire risk on power lines
-      - {token: jupiterintel, name: "Jupiter Intelligence"}  # climate risk analytics
-      - {token: zoox, name: "Zoox"}                # autonomous vehicles
-      - {token: waabi, name: "Waabi"}              # autonomous trucking
-      - {token: dexterity, name: "Dexterity"}      # robot manipulation
+      - {token: voltus, name: "Voltus", area: energy}            # demand response / grid flexibility
+      - {token: arcadia, name: "Arcadia", area: energy}          # utility data, community solar
+      - {token: bedrockenergy, name: "Bedrock Energy", area: energy}  # geothermal heating and cooling
+      - {token: arable, name: "Arable", area: climate}            # in-field crop and weather sensing
+      - {token: gridware, name: "Gridware", area: energy}        # grid sensing, wildfire risk on power lines
+      - {token: jupiterintel, name: "Jupiter Intelligence", area: climate}  # climate risk analytics
+      - {token: zoox, name: "Zoox", area: cv}                # autonomous vehicles
+      - {token: waabi, name: "Waabi", area: cv}              # autonomous trucking
+      - {token: dexterity, name: "Dexterity", area: cv}      # robot manipulation
 
   # token = the name in jobs.ashbyhq.com/<token>. Check with: python -m jobradar.cli probe ashby <token>
   ashby:
     enabled: true
     boards:
-      - {token: formenergy, name: "Form Energy"}     # grid batteries
-      - {token: span, name: "SPAN"}                  # smart electrical panels
-      - {token: leap, name: "Leap"}                  # distributed energy / VPP
-      - {token: aurorasolar, name: "Aurora Solar"}   # solar design software, aerial imagery
-      - {token: crusoe, name: "Crusoe"}              # energy-first AI cloud
-      - {token: watershed, name: "Watershed"}        # carbon accounting
-      - {token: mapbox, name: "Mapbox"}              # maps / geospatial
-      - {token: teamworks, name: "Teamworks"}        # sports tech
-      - {token: carbon-robotics, name: "Carbon Robotics"}  # moved from Greenhouse in Oct 2026; CV for agriculture
-      - {token: overstory, name: "Overstory"}        # its Greenhouse board was empty in Oct 2026; vegetation risk from satellite imagery
-      - {token: roboflow, name: "Roboflow"}          # computer vision platform
-      - {token: windborne-systems, name: "WindBorne Systems"}  # weather balloons, AI forecasting
-      - {token: pano-ai, name: "Pano AI"}            # wildfire detection cameras
-      - {token: gridcare, name: "GridCARE"}          # grid capacity modeling
-      - {token: weave-grid, name: "WeaveGrid"}       # EV charging and the grid
-      - {token: element84, name: "Element 84"}       # geospatial and earth observation software
-      - {token: firststreet, name: "First Street"}   # climate risk models
+      - {token: formenergy, name: "Form Energy", area: energy}     # grid batteries
+      - {token: span, name: "SPAN", area: energy}                  # smart electrical panels
+      - {token: leap, name: "Leap", area: energy}                  # distributed energy / VPP
+      - {token: aurorasolar, name: "Aurora Solar", area: energy}   # solar design software, aerial imagery
+      - {token: crusoe, name: "Crusoe", area: general}              # energy-first AI cloud
+      - {token: watershed, name: "Watershed", area: climate}        # carbon accounting
+      - {token: mapbox, name: "Mapbox", area: geospatial}              # maps / geospatial
+      - {token: teamworks, name: "Teamworks", area: sports}        # sports tech
+      - {token: carbon-robotics, name: "Carbon Robotics", area: cv}  # moved from Greenhouse in Oct 2026; CV for agriculture
+      - {token: overstory, name: "Overstory", area: geospatial}        # its Greenhouse board was empty in Oct 2026; vegetation risk from satellite imagery
+      - {token: roboflow, name: "Roboflow", area: cv}          # computer vision platform
+      - {token: windborne-systems, name: "WindBorne Systems", area: climate}  # weather balloons, AI forecasting
+      - {token: pano-ai, name: "Pano AI", area: climate}            # wildfire detection cameras
+      - {token: gridcare, name: "GridCARE", area: energy}          # grid capacity modeling
+      - {token: weave-grid, name: "WeaveGrid", area: energy}       # EV charging and the grid
+      - {token: element84, name: "Element 84", area: geospatial}       # geospatial and earth observation software
+      - {token: firststreet, name: "First Street", area: climate}   # climate risk models
       # Found through climate VC portfolio boards, Oct 2026
-      - {token: civilgrid, name: "CivilGrid"}        # utility and right-of-way GIS
-      - {token: cruxclimate, name: "Crux"}           # clean energy tax credit market
-      - {token: blumen, name: "Blumen"}              # environmental planning and permitting
-      - {token: heirloomcarbon, name: "Heirloom"}    # direct air capture
-      - {token: vaulted-deep, name: "Vaulted Deep"}  # carbon removal by deep injection
-      - {token: emerald-ai, name: "Emerald AI"}      # data center flexibility for the grid
-      - {token: heron-power, name: "Heron Power"}    # solid-state transformers for the grid
-      - {token: rhoda-ai, name: "Rhoda AI"}          # robot learning from video
+      - {token: civilgrid, name: "CivilGrid", area: geospatial}        # utility and right-of-way GIS
+      - {token: cruxclimate, name: "Crux", area: climate}           # clean energy tax credit market
+      - {token: blumen, name: "Blumen", area: climate}              # environmental planning and permitting
+      - {token: heirloomcarbon, name: "Heirloom", area: climate}    # direct air capture
+      - {token: vaulted-deep, name: "Vaulted Deep", area: climate}  # carbon removal by deep injection
+      - {token: emerald-ai, name: "Emerald AI", area: energy}      # data center flexibility for the grid
+      - {token: heron-power, name: "Heron Power", area: energy}    # solid-state transformers for the grid
+      - {token: rhoda-ai, name: "Rhoda AI", area: cv}          # robot learning from video
 
 # Near-duplicate collapse in the marts (python -m jobradar.pipeline dedupe).
 dedupe:

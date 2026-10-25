@@ -42,6 +42,7 @@ USAJOBS  Greenhouse  Lever  Ashby                                               
 | 1. Recall | TF-IDF (words and word pairs) cosine against each resume variant, best match kept. The top 40 unscored postings go on. |
 | 2. Rerank | Claude reads the posting against the rubric and resumes and returns a 0-10 fit score, a recommendation, gaps and an opening line through a tool call. One posting per call (pointwise). The rubric and resumes are a cached system prompt. |
 | Digest | The top 10 new postings above the fit threshold, as markdown. |
+| Tracker | A local page (`python -m jobradar.cli tracker`) over the same database: an inbox of scored postings still open, the application pipeline, and weekly reply rates. |
 
 ## Evaluation
 
@@ -96,6 +97,17 @@ python -m jobradar.cli run               # ingest -> score -> digest; writes dig
 ```
 
 Resumes go in `resumes/` as plain text. Boards go in `sources.yaml`; check a token first with `python -m jobradar.cli probe greenhouse|lever|ashby <token>`. `scripts/daily_run.sh` runs the pipeline from cron or Windows Task Scheduler (through WSL), appends to `data/run.log`, refuses to overlap a running job, and exits non-zero if scoring fails. Claude spend is capped at `recall.top_k` calls per run.
+
+### Job-hunt tracker
+
+`python -m jobradar.cli tracker` serves a page at http://127.0.0.1:8765 from the personal database. It binds to localhost only and opens the database per request, so the daily run can still take the write lock.
+
+- **Inbox:** scored postings that are still open and haven't been acted on, best fit first. Each shows why it fits, the gaps and dealbreakers, the resume variant to use, the model's opening line (check it against the resume before using it), and the full posting. Filter by area (the `area` tag on each board in `sources.yaml`; USAJOBS and hand-added roles are tagged from their titles), fit and text. Save, Applied or Not for me (with an optional reason) moves it out, along with its duplicates.
+- **Pipeline:** Saved, Applied, Interviewing and Offer columns, with notes. It flags applications with no change in 7 days, and postings that have dropped off their board. Roles that came through a person can be added by hand; they are never sent to Claude.
+- **Referrals:** `tracker.referrals` in `config.yaml` maps a company to a contact, shown on every posting from that company.
+- **Stats:** applications by week, reply and interview rates, median wait for a reply, and the same rates by area and by resume variant.
+
+Status changes are kept in `applications` and `application_events`, so they can later serve as labels for the ranker.
 
 To build the warehouse locally: `pip install -r requirements-pipeline.txt`, then `python -m jobradar.pipeline ingest`, `cd warehouse && dbt build --profiles-dir .`, and `python -m jobradar.pipeline dashboard`.
 
