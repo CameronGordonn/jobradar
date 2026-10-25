@@ -16,6 +16,10 @@ filters:
                   "account executive", "account development representative", "sales development representative",
                   "business development representative", sdr, bdr, seller, "sales leader", "sales representative",
                   "sales associate"]
+  # Plain substring match against the employer. USAJOBS names the department in parentheses,
+  # e.g. "Army National Guard Units (Department of the Army)". To drop military employers:
+  # ["Department of the Air Force", "Department of the Army", "Department of the Navy", "Department of Defense"]
+  exclude_org: []
   # Whole-word match against location. Add your state and city. "United States" keeps remote-US postings.
   location_allow: [Remote, Anywhere, "United States", USA]
   # Whole-word. Drops "Remote - Canada" style postings unless a concrete allowed location is also listed.
