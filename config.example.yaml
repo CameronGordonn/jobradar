@@ -4,7 +4,7 @@ labels_db_path: data/labels.duckdb   # hand labels live in their own file so a w
 rubric_path: rubric.md
 sources_path: sources.yaml
 
-# One entry per resume variant. Paste plain text versions of your resumes into these files.
+# One entry per resume variant: plain text, or the .html you print to PDF (read as text, minus email and phone).
 resumes:
   main: resumes/main.txt
 

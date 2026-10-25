@@ -134,6 +134,18 @@ def test_exclude_org_drops_military_departments():
     assert org("Bureau of Land Management (Department of the Interior)") is None
 
 
+def test_html_resume_read_as_text_without_contact_details(tmp_path):
+    p = tmp_path / "r.html"
+    p.write_text("<html><head><style>p{color:red}</style><title>CV</title></head><body>"
+                 "<h1>Pat Lee</h1><p>pat.lee+jobs@example.com &middot; (760) 555-0123 &middot; 760.555.0123</p>"
+                 "<ul><li>Built an ETL pipeline &amp; tests</li><li>Raised recall from 34% to 74%</li></ul></body></html>")
+    t = cli.resume_text(p)
+    assert t.splitlines() == ["Pat Lee", "Built an ETL pipeline & tests", "Raised recall from 34% to 74%"]
+    txt = tmp_path / "r.txt"
+    txt.write_text("Line one\n\nLine two")
+    assert cli.resume_text(txt) == "Line one\nLine two"
+
+
 def test_years_regex():
     f = filters.min_years_required
     assert f("Requires 3+ years of professional experience") == 3

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import html
 import logging
+import re
 import sys
 from datetime import UTC
 from pathlib import Path
@@ -22,6 +24,21 @@ BOARDS = {"greenhouse": greenhouse.fetch_board, "lever": lever.fetch_board, "ash
 
 # ---------- config ----------
 
+def resume_text(path: Path) -> str:
+    """A resume as plain text. An .html resume (the one that's printed to PDF) is read directly,
+    so editing it updates the ranking too. Email addresses and phone numbers are dropped: the
+    text goes to the API in every rerank call and doesn't need them."""
+    t = path.read_text()
+    if path.suffix.lower() in (".html", ".htm"):
+        t = re.sub(r"(?is)<(style|script|title)\b.*?</\1>", "", t)
+        t = re.sub(r"(?i)<br\s*/?>|</(p|div|li|h[1-6]|tr|section)>", "\n", t)
+        t = html.unescape(re.sub(r"<[^>]+>", " ", t))
+    t = re.sub(r"[\w.+-]+@[\w-]+\.[\w.]+", "", t)
+    t = re.sub(r"\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}\b", "", t)
+    lines = [re.sub(r"[ \t\u00a0]+", " ", ln).strip(" ·|") for ln in t.splitlines()]
+    return "\n".join(ln.strip() for ln in lines if ln.strip(" ·|"))
+
+
 def load_config(path: str) -> dict:
     p = Path(path).resolve()
     cfg = yaml.safe_load(p.read_text())
@@ -32,7 +49,7 @@ def load_config(path: str) -> dict:
     cfg["db_path"] = str(base / cfg.get("db_path", "data/jobradar.duckdb"))
     cfg["labels_db_path"] = str(base / cfg.get("labels_db_path", "data/labels.duckdb"))
     cfg["rubric_text"] = (base / cfg["rubric_path"]).read_text()
-    cfg["resume_texts"] = {k: (base / v).read_text() for k, v in cfg["resumes"].items()}
+    cfg["resume_texts"] = {k: resume_text(base / v) for k, v in cfg["resumes"].items()}
     cfg.setdefault("digest", {})["out_dir"] = str(base / cfg["digest"].get("out_dir", "digests"))
     # Older configs kept the usajobs grade and hiring-path rules under sources.usajobs.
     cfg["filters"].setdefault("usajobs", cfg["sources"].get("usajobs", {}))
