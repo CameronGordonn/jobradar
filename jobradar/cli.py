@@ -5,7 +5,7 @@ import html
 import logging
 import re
 import sys
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -50,6 +50,12 @@ def load_config(path: str) -> dict:
     cfg["labels_db_path"] = str(base / cfg.get("labels_db_path", "data/labels.duckdb"))
     cfg["rubric_text"] = (base / cfg["rubric_path"]).read_text()
     cfg["resume_texts"] = {k: resume_text(base / v) for k, v in cfg["resumes"].items()}
+    # The evaluation can pin the resumes and rubric it ran with, so the production ones can change
+    # without silently changing what rerunning the eval measures.
+    ecfg = cfg.get("eval") or {}
+    cfg["eval_resume_texts"] = {k: resume_text(base / v) for k, v in (ecfg.get("resumes") or cfg["resumes"]).items()}
+    cfg["eval_rubric_text"] = ((base / ecfg["rubric_path"]).read_text() if ecfg.get("rubric_path")
+                               else cfg["rubric_text"])
     cfg.setdefault("digest", {})["out_dir"] = str(base / cfg["digest"].get("out_dir", "digests"))
     # Older configs kept the usajobs grade and hiring-path rules under sources.usajobs.
     cfg["filters"].setdefault("usajobs", cfg["sources"].get("usajobs", {}))
@@ -124,13 +130,17 @@ def cmd_score(cfg, con, args=None, client=None):
     min_recall = cfg.get("recall", {}).get("min_recall", 0.0)
     # One call per dedupe group: skip a posting when another with the same org + title +
     # location already has a score, and send only the best-recall member of a new group.
+    # Only postings still on their board: one not seen within 2 days of the latest load has closed,
+    # and scoring it spends a call on a job nobody can apply to.
+    latest = con.scalar("SELECT max(last_seen) FROM jobs WHERE source != 'manual'")
+    open_since = (datetime.fromisoformat(latest) - timedelta(days=2)).isoformat(timespec="seconds") if latest else ""
     rows = con.query(
         """SELECT j.* FROM jobs j LEFT JOIN scores s ON s.key = j.key
-           WHERE j.filter_reason IS NULL AND s.key IS NULL AND COALESCE(j.recall, 0) >= ?
+           WHERE j.filter_reason IS NULL AND s.key IS NULL AND COALESCE(j.recall, 0) >= ? AND j.last_seen >= ?
              AND NOT EXISTS (SELECT 1 FROM jobs j2 JOIN scores s2 ON s2.key = j2.key
                              WHERE j2.dedupe_key = j.dedupe_key)
            QUALIFY row_number() OVER (PARTITION BY j.dedupe_key ORDER BY j.recall DESC, j.key) = 1
-           ORDER BY j.recall DESC, j.key LIMIT ?""", (min_recall, top_k))
+           ORDER BY j.recall DESC, j.key LIMIT ?""", (min_recall, open_since, top_k))
     n = _rerank_rows(cfg, con, rows, client)
     log.info("score: reranked %d jobs", n)
 
@@ -222,9 +232,13 @@ def _prompt_changed_at(cfg):
 
 def cmd_eval_embed(cfg, con, args):
     lab = evaluation.init(labeling.connect(cfg["labels_db_path"]))
+    resumes = list(cfg["eval_resume_texts"].values())
     for name in args.models.split(","):
-        n = evaluation.embed_pool(lab, list(cfg["resume_texts"].values()), name)
+        n = evaluation.embed_pool(lab, resumes, name)
         print(f"emb:{name}: scored {n} pool postings")
+    if args.rubric_control:
+        for ranker, n in evaluation.rubric_control(lab, resumes, cfg["eval_rubric_text"]).items():
+            print(f"{ranker}: scored {n} pool postings")
 
 
 def cmd_eval_score(cfg, con, args):
@@ -301,6 +315,8 @@ def main(argv=None):
     evp.add_argument("--n-boot", type=int, default=2000)
     eep = sub.add_parser("eval-embed", help="score the frozen pool with local embedding models")
     eep.add_argument("--models", default="bge-small,minilm")
+    eep.add_argument("--rubric-control", action="store_true",
+                     help="also score TF-IDF and bge-small with the rubric's candidate section as a query")
     esp = sub.add_parser("eval-score", help="score set a with a Claude model (estimates first)")
     esp.add_argument("--model", required=True)
     esp.add_argument("--run", type=int, default=1, help="1 = all of set a, 2 = stability rescore of 50")

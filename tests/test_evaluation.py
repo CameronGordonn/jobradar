@@ -144,18 +144,28 @@ def test_report_end_to_end_and_private_data_stays_private(world, tmp_path):
     for model in ("claude-haiku-4-5-20251001", "claude-sonnet-5-5"):
         ev.score_sync(api, lab, model, 1, ev.items_for_run(lab, 1), SYSTEM, TOOL, 8000)
         ev.score_sync(api, lab, model, 2, ev.items_for_run(lab, 2), SYSTEM, TOOL, 8000)
-    ev.embed_pool(lab, ["resume"], "bge-small", encode=lambda xs: np.array(
-        [[(sum(map(ord, x)) % 97) / 97.0, 1.0] for x in xs]) / np.sqrt(2))
+    enc = lambda xs: np.array([[(sum(map(ord, x)) % 97) / 97.0, 1.0] for x in xs]) / np.sqrt(2)  # noqa: E731
+    ev.embed_pool(lab, ["resume"], "bge-small", encode=enc)
+    rubric = "# Rubric\n## Candidate context\n- Recent graduate in applied math.\n## How to judge\n- Be strict."
+    assert ev.candidate_section(rubric) == "- Recent graduate in applied math."
+    n_pool = lab.scalar("SELECT COUNT(*) FROM pool")
+    assert ev.rubric_control(lab, ["resume"], rubric, encode=enc) == {"tfidf+rubric": n_pool,
+                                                                      "emb:bge-small+rubric": n_pool}
     ev.count_system_tokens(api, lab, "claude-haiku-4-5-20251001", SYSTEM, TOOL)
     ev.count_system_tokens(api, lab, "claude-sonnet-5-5", SYSTEM, TOOL)
 
     out, private = tmp_path / "results", tmp_path / "data/eval_details.md"
     m = report.build({"recall": {"top_k": 40}}, lab, main, out, private, n_boot=200)
     assert m["comparison"]["apply"]["status"] == "ok"
-    assert set(m["comparison"]["apply"]["rankers"]) == {"tfidf", "emb:bge-small", "claude:claude-haiku-4-5-20251001",
-                                                       "claude:claude-sonnet-5-5"}
+    assert set(m["comparison"]["apply"]["rankers"]) == {"tfidf", "emb:bge-small", "tfidf+rubric", "emb:bge-small+rubric",
+                                                       "claude:claude-haiku-4-5-20251001", "claude:claude-sonnet-5-5"}
     assert m["stability"]["claude-sonnet-5-5"]["spearman"] == pytest.approx(1.0)  # the fake is deterministic
     assert m["stage0_audit"]["labeled"] == 30
+    s0 = m["stage0_audit"]   # how much a clean filter audit can say
+    assert 0 <= s0["chance_if_as_good_as_kept"] <= 1 and 0 < s0["apply_rate_upper_95"] < 1
+    tk = m["topk_audit"]
+    assert tk["cutoffs"] == [40, 100] and set(tk["below_cutoff_if_one_batch"]["tfidf"]) == {40, 100}
+    assert tk["reached_claude_in_daily_runs"] + tk["closed_before_scored"] + tk["waiting"] <= tk["positives"]
     assert m["self_agreement"]["status"] == "pending"
     ag = m["ranker_agreement"]
     assert ag["status"] == "ok" and ag["n"] == 200

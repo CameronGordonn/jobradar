@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import re
 import time
 from dataclasses import dataclass
 
@@ -254,20 +255,51 @@ EMBEDDING_MODELS = {
 }
 
 
-def embed_pool(lab: DB, resumes: list[str], name: str, encode=None) -> int:
+def _pool_texts(lab: DB) -> list[dict]:
+    rows = lab.query("SELECT job_key, title, org, location, description FROM pool ORDER BY job_key")
+    for r in rows:
+        r["text"] = f"{r['title']}\n{r['org']}\n{r['location']}\n\n{r['description']}"
+    return rows
+
+
+def _store(lab: DB, ranker: str, rows: list[dict], scores) -> int:
+    lab.execute("DELETE FROM ranker_scores WHERE ranker=?", (ranker,))
+    lab.insert_rows("ranker_scores", [(ranker, r["job_key"], float(s), utcnow())
+                                      for r, s in zip(rows, scores, strict=True)])
+    return len(rows)
+
+
+def embed_pool(lab: DB, resumes: list[str], name: str, encode=None, ranker: str | None = None) -> int:
     """Score every posting in the frozen pool. `encode` is injectable for tests."""
-    texts = lab.query("SELECT job_key, title, org, location, description FROM pool ORDER BY job_key")
+    rows = _pool_texts(lab)
     if encode is None:
         from sentence_transformers import SentenceTransformer
         model = SentenceTransformer(EMBEDDING_MODELS[name])
         encode = lambda xs: model.encode(xs, normalize_embeddings=True, batch_size=32)  # noqa: E731
-    j = np.asarray(encode([f"{r['title']}\n{r['org']}\n{r['location']}\n\n{r['description']}" for r in texts]))
+    j = np.asarray(encode([r["text"] for r in rows]))
     v = np.asarray(encode(resumes))
-    scores = (j @ v.T).max(axis=1)
-    lab.execute("DELETE FROM ranker_scores WHERE ranker=?", (f"emb:{name}",))
-    lab.insert_rows("ranker_scores", [(f"emb:{name}", r["job_key"], float(s), utcnow())
-                                      for r, s in zip(texts, scores, strict=True)])
-    return len(texts)
+    return _store(lab, ranker or f"emb:{name}", rows, (j @ v.T).max(axis=1))
+
+
+def candidate_section(rubric: str) -> str:
+    """The rubric's "## Candidate context" section: what Claude is told about the candidate
+    beyond the resumes."""
+    m = re.search(r"(?ms)^## Candidate context\n(.*?)(?=^## |\Z)", rubric)
+    if not m:
+        raise ValueError("rubric has no '## Candidate context' section")
+    return m.group(1).strip()
+
+
+def rubric_control(lab: DB, resumes: list[str], rubric: str, encode=None) -> dict[str, int]:
+    """Control for "Claude wins because only Claude sees the rubric": the recall rankers again,
+    with the rubric's candidate section as one more query. TF-IDF is refit on the pool here
+    (the frozen tfidf scores were fit on the production corpus at the time)."""
+    from .recall import score as tfidf_score
+
+    queries = resumes + [candidate_section(rubric)]
+    rows = _pool_texts(lab)
+    return {"tfidf+rubric": _store(lab, "tfidf+rubric", rows, tfidf_score([r["text"] for r in rows], queries)),
+            "emb:bge-small+rubric": embed_pool(lab, queries, "bge-small", encode, ranker="emb:bge-small+rubric")}
 
 
 # ---------- metrics ----------
