@@ -146,6 +146,22 @@ def test_html_resume_read_as_text_without_contact_details(tmp_path):
     assert cli.resume_text(txt) == "Line one\nLine two"
 
 
+def test_score_skips_closed_per_source_and_goes_oldest_first(cfg):
+    con = db.connect(cfg["db_path"])
+    db.upsert_jobs(con, [(Job(src, sid, f"Engineer {sid}", "Acme", "Remote - US", "u", "computer vision"), None)
+                         for src, sid in [("greenhouse", "new"), ("greenhouse", "old"), ("greenhouse", "gone"),
+                                          ("lever", "lag")]])
+    for key, first, last in [("greenhouse:new", "2026-10-25", "2026-10-25"),
+                             ("greenhouse:old", "2026-10-01", "2026-10-25"),   # oldest still open
+                             ("greenhouse:gone", "2026-09-01", "2026-10-01"),  # its board loaded since: closed
+                             ("lever:lag", "2026-10-10", "2026-10-20")]:       # lever stopped loading: still open
+        con.execute("UPDATE jobs SET first_seen = ?, last_seen = ?, recall = 0.5 WHERE key = ?",
+                    (first + "T12:00:00+00:00", last + "T12:00:00+00:00", key))
+    cfg.setdefault("recall", {})["top_k"] = 2
+    cli.cmd_score(cfg, con, client=FakeClaude())
+    assert {r["key"] for r in con.query("SELECT key FROM scores")} == {"greenhouse:old", "lever:lag"}
+
+
 def test_years_regex():
     f = filters.min_years_required
     assert f("Requires 3+ years of professional experience") == 3

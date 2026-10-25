@@ -112,6 +112,17 @@ def utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None, microsecond=0)
 
 
+OPEN_GRACE_DAYS = 2
+
+
+def still_open(alias: str = "j", days: int = OPEN_GRACE_DAYS) -> str:
+    """SQL condition: the posting was seen within `days` of its own source's latest load. Per
+    source, not a global clock, so when one source stops loading for a while its postings are
+    not taken for closed. (A posting gone from a board that still loads is closed.)"""
+    return (f"(CAST({alias}.last_seen AS TIMESTAMPTZ) >= (SELECT max(CAST(x.last_seen AS TIMESTAMPTZ)) FROM jobs x "
+            f"WHERE x.source = {alias}.source) - INTERVAL {int(days)} DAY)")
+
+
 class DB:
     """Thin wrapper so callers get rows as dicts, like sqlite3.Row did."""
 

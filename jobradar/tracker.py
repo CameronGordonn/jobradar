@@ -30,7 +30,6 @@ APPLIED = {"applied", "interviewing", "offer", "rejected"}  # reaching any of th
 RESPONSES = {"interviewing", "offer", "rejected"}
 INTERVIEWS = {"interviewing", "offer"}
 FOLLOW_UP_DAYS = 7    # applied, and no change since: time to nudge
-OPEN_GRACE_DAYS = 2   # a board posting not seen in the last N days of runs is probably closed
 NEW_DAYS = 2
 
 # For postings without a tagged board (USAJOBS, added by hand). First match wins.
@@ -65,13 +64,26 @@ def referral_for(org: str, referrals: dict[str, str]) -> str | None:
                  if re.search(rf"(?<![a-z0-9]){re.escape(co.lower())}(?![a-z0-9])", o)), None)
 
 
-def _cutoffs(con: DB) -> tuple[str, str]:
-    """(still-open cutoff, new cutoff) as ISO strings, relative to the latest board run, so a
-    missed day of runs doesn't make everything look closed."""
+def _new_cutoff(con: DB) -> str:
+    """Postings first seen after this (ISO) are new: relative to the latest load, so a missed
+    run doesn't make everything look old."""
     latest = con.scalar("SELECT max(last_seen) FROM jobs WHERE source != 'manual'")
     ref = datetime.fromisoformat(latest) if latest else datetime.now().astimezone()
-    return ((ref - timedelta(days=OPEN_GRACE_DAYS)).isoformat(timespec="seconds"),
-            (ref - timedelta(days=NEW_DAYS)).isoformat(timespec="seconds"))
+    return (ref - timedelta(days=NEW_DAYS)).isoformat(timespec="seconds")
+
+
+STALE_HOURS = 36  # the daily run hasn't loaded anything in this long: say so on the page
+
+
+def health(con: DB) -> dict:
+    """When the personal pipeline last loaded and scored postings. The public pipeline has its own
+    monitor; this one runs from a local scheduler, and three weeks without a run lost two good postings."""
+    load = con.scalar("SELECT max(last_seen) FROM jobs WHERE source != 'manual'")
+    score = con.scalar("SELECT max(scored_at) FROM scores")
+    now = datetime.now().astimezone()
+    hours = (now - datetime.fromisoformat(load)).total_seconds() / 3600 if load else None
+    return {"last_load": load, "last_score": score, "hours_since_load": hours,
+            "stale": hours is None or hours > STALE_HOURS}
 
 
 def _decorate(r: dict, areas: dict, referrals: dict) -> dict:
@@ -88,26 +100,25 @@ def _decorate(r: dict, areas: dict, referrals: dict) -> dict:
 def inbox(con: DB, cfg: dict, min_fit: int = 5) -> list[dict]:
     """Scored postings still open that nothing has been done with yet, best first. A duplicate
     group (same org, title, location) disappears once any member of it has a status."""
-    open_cut, new_cut = _cutoffs(con)
-    rows = con.query("""
+    rows = con.query(f"""
         SELECT j.key, j.title, j.org, j.location, j.url, j.closes, j.first_seen, j.source,
                s.fit, s.recommend, s.variant, s.evidence, s.gaps, s.dealbreakers, s.pitch, s.model,
                j.first_seen >= ? AS is_new
         FROM jobs j JOIN scores s USING (key)
-        WHERE j.filter_reason IS NULL AND s.fit >= ? AND j.last_seen >= ? AND (j.closes IS NULL OR j.closes >= ?)
+        WHERE j.filter_reason IS NULL AND s.fit >= ? AND {db.still_open("j")} AND (j.closes IS NULL OR j.closes >= ?)
           AND NOT EXISTS (SELECT 1 FROM applications a JOIN jobs j2 USING (key)
                           WHERE j2.dedupe_key = j.dedupe_key)
-        ORDER BY s.fit DESC, j.first_seen DESC, j.key""", (new_cut, min_fit, open_cut, date.today().isoformat()))
+        ORDER BY s.fit DESC, j.first_seen DESC, j.key""", (_new_cutoff(con), min_fit, date.today().isoformat()))
     t = cfg.get("tracker", {})
     areas, referrals = board_areas(cfg["sources"]), t.get("referrals") or {}
     return [_decorate(r, areas, referrals) for r in rows]
 
 
 def pipeline(con: DB, cfg: dict) -> list[dict]:
-    open_cut, _ = _cutoffs(con)
-    rows = con.query("""
+    rows = con.query(f"""
         SELECT a.key, a.status, a.note, a.referral, a.created_at, a.updated_at, a.applied_at,
                j.title, j.org, j.location, j.url, j.source, j.last_seen, j.closes, s.fit, s.variant,
+               {db.still_open("j")} AS still_open,
                (SELECT max(happened_at) FROM application_events e WHERE e.key = a.key) AS last_event
         FROM applications a JOIN jobs j USING (key) LEFT JOIN scores s USING (key)
         WHERE a.status != 'skipped'
@@ -120,7 +131,7 @@ def pipeline(con: DB, cfg: dict) -> list[dict]:
         idle = (now - datetime.fromisoformat(r["last_event"] or r["updated_at"])).days
         r["days_idle"] = idle
         r["follow_up"] = r["status"] == "applied" and idle >= FOLLOW_UP_DAYS
-        r["posting_closed"] = r["source"] != "manual" and (r["last_seen"] or "") < open_cut
+        r["posting_closed"] = r["source"] != "manual" and not r["still_open"]
     return rows
 
 
@@ -266,6 +277,7 @@ def _handler(cfg: dict):
                 "/api/pipeline": lambda c: pipeline(c, cfg),
                 "/api/stats": lambda c: stats(c, cfg),
                 "/api/job": lambda c: job_detail(c, q.get("key", "")),
+                "/api/health": health,
             }
             if u.path not in routes:
                 return self._send(404, {"error": "not found"})

@@ -19,13 +19,18 @@ def score(job_texts: list[str], resume_texts: list[str], backend: str = "tfidf")
 
 
 def _tfidf(job_texts, resume_texts):
+    return tfidf_matrix(job_texts, resume_texts).max(axis=1)
+
+
+def tfidf_matrix(job_texts, resume_texts) -> np.ndarray:
+    """Cosine of every job against every resume (jobs x resumes), on a vocabulary fit to both."""
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
 
     vec = TfidfVectorizer(stop_words="english", ngram_range=(1, 2), sublinear_tf=True, min_df=1)
     m = vec.fit_transform(job_texts + resume_texts)
     jobs, resumes = m[: len(job_texts)], m[len(job_texts):]
-    return cosine_similarity(jobs, resumes).max(axis=1)
+    return cosine_similarity(jobs, resumes)
 
 
 def _embed(job_texts, resume_texts, model_name="BAAI/bge-small-en-v1.5"):

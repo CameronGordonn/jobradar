@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS ranker_scores (
     ranker VARCHAR, job_key VARCHAR, score DOUBLE, created_at TIMESTAMP,
     PRIMARY KEY (ranker, job_key)
 );
+-- Facts about a control ranker the scores alone don't show (rubric_control).
+CREATE TABLE IF NOT EXISTS control_stats (
+    ranker VARCHAR PRIMARY KEY, stat VARCHAR, value DOUBLE, created_at TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS eval_scores (
     model VARCHAR, run INTEGER, job_key VARCHAR,
     fit INTEGER, recommend VARCHAR, result_json VARCHAR,
@@ -269,16 +273,18 @@ def _store(lab: DB, ranker: str, rows: list[dict], scores) -> int:
     return len(rows)
 
 
-def embed_pool(lab: DB, resumes: list[str], name: str, encode=None, ranker: str | None = None) -> int:
-    """Score every posting in the frozen pool. `encode` is injectable for tests."""
-    rows = _pool_texts(lab)
+def _embed_matrix(rows: list[dict], queries: list[str], name: str, encode=None) -> np.ndarray:
     if encode is None:
         from sentence_transformers import SentenceTransformer
         model = SentenceTransformer(EMBEDDING_MODELS[name])
         encode = lambda xs: model.encode(xs, normalize_embeddings=True, batch_size=32)  # noqa: E731
-    j = np.asarray(encode([r["text"] for r in rows]))
-    v = np.asarray(encode(resumes))
-    return _store(lab, ranker or f"emb:{name}", rows, (j @ v.T).max(axis=1))
+    return np.asarray(encode([r["text"] for r in rows])) @ np.asarray(encode(queries)).T
+
+
+def embed_pool(lab: DB, resumes: list[str], name: str, encode=None) -> int:
+    """Score every posting in the frozen pool. `encode` is injectable for tests."""
+    rows = _pool_texts(lab)
+    return _store(lab, f"emb:{name}", rows, _embed_matrix(rows, resumes, name, encode).max(axis=1))
 
 
 def candidate_section(rubric: str) -> str:
@@ -290,16 +296,30 @@ def candidate_section(rubric: str) -> str:
     return m.group(1).strip()
 
 
-def rubric_control(lab: DB, resumes: list[str], rubric: str, encode=None) -> dict[str, int]:
+CONTROL_BASELINE = {"tfidf+rubric": "tfidf-refit", "emb:bge-small+rubric": "emb:bge-small"}
+
+
+def rubric_control(lab: DB, resumes: list[str], rubric: str, encode=None) -> dict[str, float]:
     """Control for "Claude wins because only Claude sees the rubric": the recall rankers again,
-    with the rubric's candidate section as one more query. TF-IDF is refit on the pool here
-    (the frozen tfidf scores were fit on the production corpus at the time)."""
-    from .recall import score as tfidf_score
+    with the rubric's candidate section as one more query, each compared with the same ranker
+    without it (CONTROL_BASELINE). TF-IDF is refit on the pool for both arms: the frozen stage 1
+    scores were fit on a different corpus, so comparing against them would mix two changes.
+    Scores are a max over queries, so the extra query only counts where it is the best match;
+    the share of postings where it is gets stored with the scores. Returns those shares."""
+    from .recall import tfidf_matrix
 
     queries = resumes + [candidate_section(rubric)]
     rows = _pool_texts(lab)
-    return {"tfidf+rubric": _store(lab, "tfidf+rubric", rows, tfidf_score([r["text"] for r in rows], queries)),
-            "emb:bge-small+rubric": embed_pool(lab, queries, "bge-small", encode, ranker="emb:bge-small+rubric")}
+    sims = {"tfidf+rubric": tfidf_matrix([r["text"] for r in rows], queries),
+            "emb:bge-small+rubric": _embed_matrix(rows, queries, "bge-small", encode)}
+    _store(lab, "tfidf-refit", rows, sims["tfidf+rubric"][:, :-1].max(axis=1))
+    shares = {}
+    for ranker, m in sims.items():
+        _store(lab, ranker, rows, m.max(axis=1))
+        shares[ranker] = float(np.mean(m.argmax(axis=1) == m.shape[1] - 1))
+        lab.execute("INSERT OR REPLACE INTO control_stats VALUES (?, 'rubric_query_is_best_match', ?, ?)",
+                    (ranker, shares[ranker], utcnow()))
+    return shares
 
 
 # ---------- metrics ----------
