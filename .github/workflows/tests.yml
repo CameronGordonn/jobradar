@@ -6,10 +6,10 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -21,10 +21,10 @@ jobs:
         run: sqlfluff lint models tests
 
   pytest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -33,12 +33,12 @@ jobs:
       - run: python -m pytest -q   # -m puts the repo root on sys.path so `jobradar` imports
 
   dbt:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       JOBRADAR_WAREHOUSE: ${{ github.workspace }}/ci.duckdb
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
