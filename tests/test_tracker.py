@@ -86,6 +86,21 @@ def test_follow_up_and_closed_posting(con):
     assert p["greenhouse:4"]["posting_closed"] and not p["greenhouse:4"]["follow_up"]
 
 
+def test_a_board_that_stops_loading_does_not_close_its_postings(tmp_path):
+    c = db.connect(tmp_path / "b.duckdb")
+    db.upsert_jobs(c, [(job("acme:1", "Data Scientist"), None), (job("acme:2", "Analyst"), None),
+                       (job("beta:1", "ML Engineer", org="Beta"), None), (job("gone:1", "Analyst", org="Gone"), None),
+                       (Job("usajobs", "100", "Analyst", "EPA", "Remote", "u", "d"), None),
+                       (Job("usajobs", "101", "Statistician", "EPA", "Remote", "u", "d"), None)])
+    c.execute("UPDATE jobs SET last_seen = '2026-10-20T00:00:00+00:00'")
+    # Beta's board timed out for four days; acme kept loading but acme:2 came down; Gone moved off
+    # Greenhouse ten days ago.
+    c.execute("UPDATE jobs SET last_seen = '2026-10-24T00:00:00+00:00' WHERE key IN ('greenhouse:acme:1', 'usajobs:100')")
+    c.execute("UPDATE jobs SET last_seen = '2026-10-14T00:00:00+00:00' WHERE key = 'greenhouse:gone:1'")
+    open_ = {r["key"] for r in c.query(f"SELECT key FROM jobs j WHERE {db.still_open('j')}")}
+    assert open_ == {"greenhouse:acme:1", "greenhouse:beta:1", "usajobs:100"}   # USAJOBS is one board
+
+
 def test_manual_job_skips_scoring_and_shows_in_pipeline(con):
     key = tracker.add_manual(con, "Data Engineer", "Accenture", referral="Tim", status="applied")
     assert con.scalar("SELECT filter_reason FROM jobs WHERE key = ?", (key,)) == "manual"

@@ -68,7 +68,7 @@ The public half needs only `sources.yaml` and never touches the personal half. L
 | Stage | What it does |
 |---|---|
 | 0. Hard filters | Title words (senior, staff, intern, and non-technical sales titles such as Account Executive), employer (military departments), location allow and block lists, the source's country field, clearance wording, minimum years of experience, and USAJOBS hiring path and GS grade. Biased toward keeping postings. |
-| 1. Recall | TF-IDF (words and word pairs) cosine against each resume variant, best match kept. It only breaks ties now: each run sends up to `recall.top_k` unscored postings still on their boards (40 in the example config), oldest first, and the rest wait for later runs. A posting counts as closed when it is more than 2 days behind its own source's latest load. |
+| 1. Recall | TF-IDF (words and word pairs) cosine against each resume variant, best match kept. It only breaks ties now: each run sends up to `recall.top_k` unscored postings still on their boards (40 in the example config), oldest first, and the rest wait for later runs. A posting counts as closed when it is more than 2 days behind its own board's latest load, or when its board has loaded nothing for 7 days while the rest of its source has. |
 | 2. Rerank | Claude reads the posting against the rubric and resumes and returns a 0-10 fit score, a recommendation, gaps, and an opening line through a tool call. One posting per call. The rubric and resumes are a cached system prompt. |
 | Digest | The top 10 new postings above the fit threshold, as markdown. |
 | Tracker | A local page over the same database: an inbox of scored postings still open, the application pipeline, and weekly reply rates. |
