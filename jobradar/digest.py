@@ -10,7 +10,7 @@ def write(con, cfg: dict) -> Path | None:
         """SELECT j.*, s.fit, s.recommend, s.variant, s.evidence, s.gaps, s.dealbreakers, s.pitch
            FROM jobs j JOIN scores s ON s.key = j.key
            LEFT JOIN digested d ON d.key = j.key
-           WHERE d.key IS NULL AND s.fit >= ? AND s.recommend != 'skip'
+           WHERE d.key IS NULL AND j.filter_reason IS NULL AND s.fit >= ? AND s.recommend != 'skip'
            ORDER BY s.fit DESC, j.recall DESC
            LIMIT ?""",
         (cfg.get("min_fit", 6), cfg.get("top_n", 10)),

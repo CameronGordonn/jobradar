@@ -38,6 +38,9 @@ def check(job: Job, cfg: dict) -> str | None:
     for kw in cfg.get("exclude_title", []):
         if _word_hit(kw, job.title):
             return f"title:{kw}"
+    for kw in cfg.get("exclude_org", []):
+        if kw.lower() in (job.org or "").lower():
+            return f"org:{kw}"
 
     allow = cfg.get("location_allow", [])
     if allow and not any(_word_hit(a, job.location) for a in allow):
