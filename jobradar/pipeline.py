@@ -106,19 +106,31 @@ def check_quality(con: DB, run_id: str | None = None, sources: dict | None = Non
 
 
 def _empty_boards(con: DB, run_id: str, sources: dict, healthy: set[str]) -> list[dict]:
-    """One flag per configured board that loaded nothing this run, as "<source>/<token>". A
-    source's total hides one empty board (Overstory's Greenhouse board was empty from the first
-    run; it had moved to Ashby). Only for sources that are fine overall, so an outage is one flag."""
+    """A check per configured board that loaded nothing this run, as "<source>/<token>". A source's
+    total hides one empty board (Overstory's Greenhouse board sat empty after it moved to Ashby).
+    An empty board looks the same whether the company moved or just has no openings, so only the
+    run where a board goes from postings to none is flagged: one alert, not one a day. Only for
+    sources that are fine overall, so an outage is one flag."""
     out = []
+    started = con.scalar("SELECT min(started_at) FROM ingest_runs WHERE run_id=?", (run_id,))
     for source in sorted(healthy & set(db.RAW_SOURCES)):
         tokens = [b["token"] for b in sources.get(source, {}).get("boards", [])
                   if not b["token"].startswith("REPLACE")]
-        loaded = {r["board"] for r in con.query(
-            f"SELECT DISTINCT board FROM raw_{source} WHERE run_id=?", (run_id,))}
-        out += [{"run_id": run_id, "source": f"{source}/{t}", "checked_at": utcnow(), "rows_fetched": 0,
-                 "trailing_runs": None, "trailing_median": None, "ratio": None, "flagged": True,
-                 "reason": "board loaded no postings: renamed, moved to another job board, or no openings"}
-                for t in tokens if t not in loaded]
+        prev = con.scalar("""SELECT run_id FROM ingest_runs WHERE source=? AND started_at < ? AND run_id != ?
+                             ORDER BY started_at DESC LIMIT 1""", (source, started, run_id))
+        # A load moves a posting's run_id forward, so rows still on prev are the ones that left this run.
+        by_run = {}
+        for r in con.query(f"SELECT DISTINCT board, run_id FROM raw_{source} WHERE run_id IN (?, ?)",
+                           (run_id, prev or run_id)):
+            by_run.setdefault(r["run_id"], set()).add(r["board"])
+        for t in tokens:
+            if t in by_run.get(run_id, set()):
+                continue
+            went_empty = prev is not None and t in by_run.get(prev, set())
+            out.append({"run_id": run_id, "source": f"{source}/{t}", "checked_at": utcnow(), "rows_fetched": 0,
+                        "trailing_runs": None, "trailing_median": None, "ratio": None, "flagged": went_empty,
+                        "reason": "board went empty this run: renamed, moved to another job board, or no openings"
+                        if went_empty else "board loaded no postings (not newly: check the token if it never has)"})
     return out
 
 

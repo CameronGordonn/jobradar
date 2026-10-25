@@ -4,7 +4,7 @@
 [![daily pipeline](https://github.com/CameronGordonn/jobradar/actions/workflows/daily.yml/badge.svg)](https://github.com/CameronGordonn/jobradar/actions/workflows/daily.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-jobradar pulls job postings from USAJOBS and 48 company boards on Greenhouse, Lever and Ashby, and does two things with them:
+jobradar pulls job postings from USAJOBS and 49 company boards on Greenhouse, Lever and Ashby, and does two things with them:
 
 1. **Ranks them for one person.** Hard filters, a cheap recall stage and a Claude rerank against a written rubric turn about 5,400 postings a day into a short daily list. It never applies or sends anything.
 2. **Keeps a public warehouse of the postings.** A scheduled GitHub Actions job loads them into DuckDB, models them with dbt, tests them, and publishes aggregate charts.
@@ -78,7 +78,7 @@ Claude scoring goes through the Batch API at half price, and `eval-score` refuse
   - marts: open postings with near-duplicates collapsed, daily postings per source, weekly postings by role family and company, per-run source health, closed postings with days listed, and per-posting edit counts from the snapshot.
   - tests: unique and not_null keys, accepted_values on every enum, relationships from the marts and clusters back to `int_jobs`, singular tests, unit tests on `int_jobs` and the lifecycle mart, and source freshness (warn at 30 hours, error at 54). A pytest builds twice around a run with known edits and checks the snapshot counts exactly those.
   - docs: `dbt docs generate --static` is published next to the dashboard at `/dbt/` (models, columns, tests, lineage).
-- **Data quality**: each run compares every source's row count with the median of its previous 7 runs and flags a drop below half, which usually means an API change. It also flags each configured board that loaded nothing, which a source's total hides (a company that moved to another job board). Flags go to `quality_checks`, show as warnings on the Actions run, open (or comment on) a GitHub issue labeled `data-quality`, and source-level flags appear on the dashboard.
+- **Data quality**: each run compares every source's row count with the median of its previous 7 runs and flags a drop below half, which usually means an API change. It also flags the run where a configured board goes from postings to none, which a source's total hides (a company that moved to another job board); a board that stays empty is logged, not flagged again. Flags go to `quality_checks`, show as warnings on the Actions run, open (or comment on) a GitHub issue labeled `data-quality`, and source-level flags appear on the dashboard.
 - **Near-duplicates**: "ML Engineer" and "Machine Learning Engineer" at the same company are the same job. Postings are embedded as "title | company | location" and compared within a company. The threshold comes from 50 hand-marked pairs drawn across the similarity range (pending; until then only exact matches collapse).
 - **Schedule** (`.github/workflows/daily.yml`, daily at 14:17 UTC): restore the warehouse, ingest, quality checks and alerts, freshness, dbt build, dedupe, marts, dashboard and dbt docs to Pages, and a weekly Parquet backup. No Claude calls.
 - **CI** (`.github/workflows/tests.yml`, every push): ruff and sqlfluff; pytest; dbt build, freshness, docs and the two-build snapshot test against a committed synthetic fixture (eight daily runs of made-up companies, with a simulated outage the quality monitor must catch).

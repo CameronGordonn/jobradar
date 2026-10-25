@@ -45,6 +45,7 @@ sources:
       - {token: rondoenergy, name: "Rondo Energy"}      # heat batteries
       - {token: lunarenergy, name: "Lunar Energy"}      # home batteries
       - {token: energyhub, name: "EnergyHub"}           # distributed energy management
+      - {token: relae, name: "Relae (formerly Pachama)"}  # energy and climate advisory, carbon project review
       # Sports analytics
       - {token: hudl, name: "Hudl"}
       - {token: geniussports, name: "Genius Sports"}
