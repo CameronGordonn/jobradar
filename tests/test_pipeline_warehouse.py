@@ -60,15 +60,26 @@ def test_quality_flags_source_missing_from_run(tmp_path):
     assert not c["lever"]["flagged"]
 
 
-def test_quality_flags_an_empty_board_inside_a_healthy_source(tmp_path):
+def test_quality_flags_a_board_the_run_it_goes_empty(tmp_path):
     con = db.connect(tmp_path / "w.duckdb", app_tables=False)
-    db.upsert_raw(con, "greenhouse", [("1", "acme", "Acme", {}), ("2", "beta", "Beta", {})], "r00")
-    db.log_run(con, "r00", "greenhouse", db.utcnow(), 2, 2, finished=db.utcnow())
-    boards = [{"token": "acme"}, {"token": "beta"}, {"token": "gone"}, {"token": "REPLACE_ME"}]
-    c = {x["source"]: x for x in pipeline.check_quality(con, "r00", {"greenhouse": {"boards": boards}})}
-    assert set(c) == {"greenhouse", "greenhouse/gone"}
-    assert c["greenhouse/gone"]["flagged"] and not c["greenhouse"]["flagged"]
-    assert con.scalar("SELECT COUNT(*) FROM quality_checks WHERE source='greenhouse/gone' AND flagged") == 1
+    t0 = db.utcnow() - timedelta(days=3)
+    boards = {"greenhouse": {"boards": [{"token": t} for t in ("acme", "beta", "never", "REPLACE_ME")]}}
+
+    def load(i, loaded):  # quality runs right after each ingest, as in the daily job
+        db.upsert_raw(con, "greenhouse", [(f"{b}1", b, b, {}) for b in loaded], f"r{i:02d}")
+        db.log_run(con, f"r{i:02d}", "greenhouse", t0 + timedelta(days=i), len(loaded), 0,
+                   finished=t0 + timedelta(days=i))
+        return {x["source"]: x for x in pipeline.check_quality(con, f"r{i:02d}", boards)}
+
+    load(0, ["acme", "beta"])
+    c = load(1, ["acme"])
+    assert set(c) == {"greenhouse", "greenhouse/beta", "greenhouse/never"}
+    assert c["greenhouse/beta"]["flagged"] and "went empty" in c["greenhouse/beta"]["reason"]
+    assert not c["greenhouse/never"]["flagged"]
+    # Still empty a run later: logged, not flagged again.
+    c = load(2, ["acme"])
+    assert not c["greenhouse/beta"]["flagged"] and not c["greenhouse/never"]["flagged"]
+    assert con.scalar("SELECT COUNT(*) FROM quality_checks WHERE flagged") == 1
 
 
 def test_quality_source_outage_is_one_flag_not_one_per_board(tmp_path):
