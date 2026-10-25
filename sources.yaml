@@ -30,13 +30,25 @@ sources:
       - {token: gomotive, name: "Motive"}
       - {token: nuro, name: "Nuro"}
       - {token: figureai, name: "Figure AI"}
+      - {token: motional, name: "Motional"}
+      - {token: voxel51, name: "Voxel51"}               # CV dataset tooling
+      - {token: hover, name: "Hover"}                   # 3D home models from phone photos
       # Geospatial, remote sensing, weather, energy
       - {token: planetlabs, name: "Planet Labs"}
       - {token: tomorrow, name: "Tomorrow.io"}
       - {token: fervoenergy, name: "Fervo Energy"}
+      - {token: muonspace, name: "Muon Space"}          # climate and wildfire satellites
+      - {token: zestyai, name: "Zesty.ai"}              # property climate risk from aerial imagery
+      - {token: aidashinc, name: "AiDash"}              # satellite vegetation management for utilities
+      - {token: redwoodmaterials, name: "Redwood Materials"}  # battery recycling, energy storage
+      - {token: antora, name: "Antora Energy"}          # thermal batteries
+      - {token: rondoenergy, name: "Rondo Energy"}      # heat batteries
+      - {token: lunarenergy, name: "Lunar Energy"}      # home batteries
+      - {token: energyhub, name: "EnergyHub"}           # distributed energy management
       # Sports analytics
       - {token: hudl, name: "Hudl"}
       - {token: geniussports, name: "Genius Sports"}
+      - {token: catapultsports, name: "Catapult"}       # athlete tracking
       # General ML / data
       - {token: anthropic, name: "Anthropic"}
       - {token: databricks, name: "Databricks"}
@@ -48,6 +60,11 @@ sources:
     boards:
       - {token: voltus, name: "Voltus"}            # demand response / grid flexibility
       - {token: arcadia, name: "Arcadia"}          # utility data, community solar
+      - {token: gridware, name: "Gridware"}        # grid sensing, wildfire risk on power lines
+      - {token: jupiterintel, name: "Jupiter Intelligence"}  # climate risk analytics
+      - {token: zoox, name: "Zoox"}                # autonomous vehicles
+      - {token: waabi, name: "Waabi"}              # autonomous trucking
+      - {token: dexterity, name: "Dexterity"}      # robot manipulation
 
   # token = the name in jobs.ashbyhq.com/<token>. Check with: python -m jobradar.cli probe ashby <token>
   ashby:
@@ -63,6 +80,13 @@ sources:
       - {token: teamworks, name: "Teamworks"}        # sports tech
       - {token: carbon-robotics, name: "Carbon Robotics"}  # moved from Greenhouse in Oct 2026; CV for agriculture
       - {token: overstory, name: "Overstory"}        # its Greenhouse board was empty in Oct 2026; vegetation risk from satellite imagery
+      - {token: roboflow, name: "Roboflow"}          # computer vision platform
+      - {token: windborne-systems, name: "WindBorne Systems"}  # weather balloons, AI forecasting
+      - {token: pano-ai, name: "Pano AI"}            # wildfire detection cameras
+      - {token: gridcare, name: "GridCARE"}          # grid capacity modeling
+      - {token: weave-grid, name: "WeaveGrid"}       # EV charging and the grid
+      - {token: element84, name: "Element 84"}       # geospatial and earth observation software
+      - {token: firststreet, name: "First Street"}   # climate risk models
 
 # Near-duplicate collapse in the marts (python -m jobradar.pipeline dedupe).
 dedupe:
