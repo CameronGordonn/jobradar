@@ -32,7 +32,6 @@ sources:
       - {token: figureai, name: "Figure AI"}
       # Geospatial, remote sensing, weather, energy
       - {token: planetlabs, name: "Planet Labs"}
-      - {token: overstory, name: "Overstory"}
       - {token: tomorrow, name: "Tomorrow.io"}
       - {token: fervoenergy, name: "Fervo Energy"}
       # Sports analytics
@@ -63,6 +62,7 @@ sources:
       - {token: mapbox, name: "Mapbox"}              # maps / geospatial
       - {token: teamworks, name: "Teamworks"}        # sports tech
       - {token: carbon-robotics, name: "Carbon Robotics"}  # moved from Greenhouse in Oct 2026; CV for agriculture
+      - {token: overstory, name: "Overstory"}        # its Greenhouse board was empty in Oct 2026; vegetation risk from satellite imagery
 
 # Near-duplicate collapse in the marts (python -m jobradar.pipeline dedupe).
 dedupe:

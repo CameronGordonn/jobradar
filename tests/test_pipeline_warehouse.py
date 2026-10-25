@@ -60,6 +60,24 @@ def test_quality_flags_source_missing_from_run(tmp_path):
     assert not c["lever"]["flagged"]
 
 
+def test_quality_flags_an_empty_board_inside_a_healthy_source(tmp_path):
+    con = db.connect(tmp_path / "w.duckdb", app_tables=False)
+    db.upsert_raw(con, "greenhouse", [("1", "acme", "Acme", {}), ("2", "beta", "Beta", {})], "r00")
+    db.log_run(con, "r00", "greenhouse", db.utcnow(), 2, 2, finished=db.utcnow())
+    boards = [{"token": "acme"}, {"token": "beta"}, {"token": "gone"}, {"token": "REPLACE_ME"}]
+    c = {x["source"]: x for x in pipeline.check_quality(con, "r00", {"greenhouse": {"boards": boards}})}
+    assert set(c) == {"greenhouse", "greenhouse/gone"}
+    assert c["greenhouse/gone"]["flagged"] and not c["greenhouse"]["flagged"]
+    assert con.scalar("SELECT COUNT(*) FROM quality_checks WHERE source='greenhouse/gone' AND flagged") == 1
+
+
+def test_quality_source_outage_is_one_flag_not_one_per_board(tmp_path):
+    con = db.connect(tmp_path / "w.duckdb", app_tables=False)
+    log_runs(con, "lever", [0])
+    c = pipeline.check_quality(con, "r00", {"lever": {"boards": [{"token": "a"}, {"token": "b"}]}})
+    assert [x["source"] for x in c] == ["lever"] and c[0]["flagged"]
+
+
 def test_fixture_replay_is_idempotent_and_catches_the_outage(tmp_path):
     con = db.connect(tmp_path / "w.duckdb", app_tables=False)
     assert pipeline.load_fixture_runs(con, FIXTURE) == 8

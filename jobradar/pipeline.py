@@ -60,11 +60,12 @@ def ingest_raw(con: DB, sources: dict, fetchers: dict[str, Callable] | None = No
     return run_id, out
 
 
-def check_quality(con: DB, run_id: str | None = None) -> list[dict]:
+def check_quality(con: DB, run_id: str | None = None, sources: dict | None = None) -> list[dict]:
     """Compare each source's row count in a run with the median of its previous runs (up to 7).
     Flags a drop below half the median, a run that returned no rows at all (an enabled source
     is never legitimately empty, and a source stuck at zero would otherwise drag its own median
-    to zero and read as fine), and a source with history that logged nothing."""
+    to zero and read as fine), and a source with history that logged nothing. With `sources`
+    (the sources.yaml mapping), also flags each configured board that loaded nothing."""
     if run_id is None:
         run_id = con.scalar("SELECT run_id FROM ingest_runs ORDER BY started_at DESC LIMIT 1")
         if run_id is None:
@@ -97,9 +98,28 @@ def check_quality(con: DB, run_id: str | None = None) -> list[dict]:
                        "trailing_runs": len(prev), "trailing_median": med,
                        "ratio": (n / med) if (n is not None and med) else None,
                        "flagged": flagged, "reason": reason})
+    if sources:
+        checks += _empty_boards(con, run_id, sources, {c["source"] for c in checks if not c["flagged"]})
     con.execute("DELETE FROM quality_checks WHERE run_id=?", (run_id,))
     con.insert_rows("quality_checks", [tuple(c.values()) for c in checks])
     return checks
+
+
+def _empty_boards(con: DB, run_id: str, sources: dict, healthy: set[str]) -> list[dict]:
+    """One flag per configured board that loaded nothing this run, as "<source>/<token>". A
+    source's total hides one empty board (Overstory's Greenhouse board was empty from the first
+    run; it had moved to Ashby). Only for sources that are fine overall, so an outage is one flag."""
+    out = []
+    for source in sorted(healthy & set(db.RAW_SOURCES)):
+        tokens = [b["token"] for b in sources.get(source, {}).get("boards", [])
+                  if not b["token"].startswith("REPLACE")]
+        loaded = {r["board"] for r in con.query(
+            f"SELECT DISTINCT board FROM raw_{source} WHERE run_id=?", (run_id,))}
+        out += [{"run_id": run_id, "source": f"{source}/{t}", "checked_at": utcnow(), "rows_fetched": 0,
+                 "trailing_runs": None, "trailing_median": None, "ratio": None, "flagged": True,
+                 "reason": "board loaded no postings: renamed, moved to another job board, or no openings"}
+                for t in tokens if t not in loaded]
+    return out
 
 
 # ---------- backup ----------
@@ -181,8 +201,10 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     ip = sub.add_parser("ingest", help="fetch every source in sources.yaml into the raw tables")
     ip.add_argument("--sources", default="sources.yaml")
-    qp = sub.add_parser("quality", help="flag sources whose row count dropped versus their trailing median")
+    qp = sub.add_parser("quality", help="flag sources whose row count dropped versus their trailing median, "
+                                         "and boards that loaded nothing")
     qp.add_argument("--flags-out", help="write the flagged checks here as JSON (for the alerting step)")
+    qp.add_argument("--sources", default="sources.yaml")
     fp = sub.add_parser("load-fixtures", help="build a warehouse from the committed synthetic fixture")
     fp.add_argument("--path", default="tests/fixtures/warehouse/runs.json")
     sub.add_parser("init", help="create empty warehouse tables")
@@ -216,7 +238,7 @@ def main(argv=None):
         run_id, _ = ingest_raw(con, sources)
         print(run_id)
     elif args.cmd == "quality":
-        checks = check_quality(con)
+        checks = check_quality(con, sources=yaml.safe_load(Path(args.sources).read_text())["sources"])
         for c in checks:
             line = f"{c['source']}: {c['rows_fetched']} rows, trailing median {c['trailing_median']}, {c['reason']}"
             # GitHub Actions shows ::warning:: lines as annotations on the run.
