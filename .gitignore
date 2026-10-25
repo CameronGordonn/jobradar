@@ -13,6 +13,8 @@ results/*
 !results/eval_summary.md
 !results/eval_metrics.json
 !results/precision_at_k.png
+!results/dedupe_eval.json
+!results/dedupe_title_rule.json
 warehouse/target/
 warehouse/logs/
 warehouse/dbt_packages/

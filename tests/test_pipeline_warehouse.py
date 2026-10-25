@@ -142,6 +142,29 @@ def test_dedupe_threshold_rule_and_blind_marking(tmp_path):
     assert res["chosen"]["recall_w"] == 1.0
 
 
+def test_dedupe_company_title_rule():
+    from jobradar import dedupe
+    jobs = fake_jobs() + [{"job_id": "a5", "company": "acme ", "title": "Accountant", "location": "NYC",
+                           "url": "u", "exact_key": "acme|Accountant|NYC"},
+                          {"job_id": "a6", "company": "Acme", "title": "R&D Analyst", "location": "SF", "url": "u",
+                           "exact_key": "x6"},
+                          {"job_id": "a7", "company": "Acme", "title": "R and D analyst", "location": "LA",
+                           "url": "u", "exact_key": "x7"}]
+    m = dedupe.cluster_by_title(jobs)
+    # same title in another city joins the cluster; a different title or company doesn't
+    assert m["a5"] == m["a4"] == m["a3"] == "a3" and m["a7"] == "a6"
+    assert m["a1"] == "a1" and m["a2"] == "a2" and m["b1"] == "b1"
+    pair = {"company": "Acme", "title_a": "Accountant", "title_b": "accountant!"}
+    rows = [{**pair, "same": "y"}, {**pair, "same": "n"},
+            {"company": "Acme", "title_a": "ML Engineer", "title_b": "Machine Learning Engineer", "same": "y"},
+            {"company": "Acme", "title_a": "A", "title_b": "B", "same": "n"}, {**pair, "same": ""}]
+    r = dedupe.evaluate_title_rule(rows)
+    assert (r["marked"], r["tp"], r["fp"], r["fn"], r["tn"]) == (4, 1, 1, 1, 1)
+    assert r["precision"] == 0.5 and r["recall"] == 0.5
+    assert dedupe.evaluate_title_rule([{**pair, "same": "y"}] * 30)["precision_lower_95"] == pytest.approx(
+        0.05 ** (1 / 30))
+
+
 def test_parquet_export_restore_round_trip(tmp_path):
     con = db.connect(tmp_path / "w.duckdb", app_tables=False)
     pipeline.load_fixture_runs(con, FIXTURE)

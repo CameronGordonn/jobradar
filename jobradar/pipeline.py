@@ -229,7 +229,8 @@ def main(argv=None):
     mp = sub.add_parser("dedupe-mark", help="mark candidate pairs same/different (similarity hidden)")
     mp.add_argument("--pairs", default="data/dedupe_pairs.csv")
     ep = sub.add_parser("dedupe-eval", help="pick the threshold from the marks; precision, recall, share collapsed")
-    ep.add_argument("--pairs", default="data/dedupe_pairs.csv")
+    ep.add_argument("--pairs", nargs="+", default=["data/dedupe_pairs.csv"])
+    ep.add_argument("--rule", choices=["embedding", "company_title"], default="embedding")
     ap_ = sub.add_parser("dedupe", help="cluster postings at the threshold in sources.yaml into job_clusters")
     ap_.add_argument("--sources", default="sources.yaml")
     ap_.add_argument("--threshold", type=float, default=None)
@@ -274,7 +275,24 @@ def main(argv=None):
               f"wrote {len(rows)} candidates to {args.out}")
     elif args.cmd == "dedupe-eval":
         from . import dedupe
-        res = dedupe.evaluate(dedupe.read_pairs(Path(args.pairs)))
+        if args.rule == "company_title":
+            jobs = dedupe.load_jobs(con)
+            res = {"rule": "company_title", "files": {}}
+            for p in args.pairs:
+                res["files"][p] = dedupe.evaluate_title_rule(dedupe.read_pairs(Path(p)))
+            exact = {j["job_id"]: j["exact_key"] for j in jobs}
+            res.update(postings=len(jobs), collapsed_share=dedupe.collapsed_share(dedupe.cluster_by_title(jobs)),
+                       collapsed_share_exact_only=dedupe.collapsed_share(exact))
+            out = Path("results/dedupe_title_rule.json")
+            out.parent.mkdir(exist_ok=True)
+            out.write_text(json.dumps(res, indent=2))
+            for p, r in res["files"].items():
+                lo = f", precision >= {r['precision_lower_95']:.3f} (95%)" if r["precision_lower_95"] else ""
+                print(f"{p}: {r['marked']} marked, tp={r['tp']} fp={r['fp']} fn={r['fn']} tn={r['tn']}{lo}")
+            print(f"Collapses {res['collapsed_share']:.1%} of {len(jobs)} open postings "
+                  f"({res['collapsed_share_exact_only']:.1%} from exact matches alone). Wrote {out}.")
+            return
+        res = dedupe.evaluate(dedupe.read_pairs(Path(args.pairs[0])))
         if res["status"] != "ok":
             print(f"pending: {res['reason']}")
         else:
@@ -304,9 +322,16 @@ def main(argv=None):
         print(f"wrote {args.out}/index.html and data.json: {d['tiles']['open_postings']} open postings")
     elif args.cmd == "dedupe":
         from . import dedupe
+        dcfg = yaml.safe_load(Path(args.sources).read_text()).get("dedupe") or {}
         t = args.threshold
+        if t is None and dcfg.get("rule") == "company_title":
+            jobs = dedupe.load_jobs(con, open_only=False)
+            mapping = dedupe.cluster_by_title(jobs)
+            dedupe.write_clusters(con, mapping, None)
+            print(f"clustered {len(jobs)} postings by company + title: {dedupe.collapsed_share(mapping):.1%} collapsed")
+            return
         if t is None:
-            t = (yaml.safe_load(Path(args.sources).read_text()).get("dedupe") or {}).get("threshold")
+            t = dcfg.get("threshold")
         if t is None:
             dedupe.write_clusters(con, {}, None)
             print("dedupe threshold not set yet (pending hand-marked pairs); exact matches only")

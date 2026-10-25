@@ -109,5 +109,12 @@ sources:
 
 # Near-duplicate collapse in the marts (python -m jobradar.pipeline dedupe).
 dedupe:
-  model: BAAI/bge-small-en-v1.5
-  threshold: null   # pending: chosen from hand-marked pairs with `python -m jobradar.pipeline dedupe-eval`
+  # company_title: same company and title (case, punctuation and "&"/"and" ignored), any location.
+  # Chosen 2026-10-24 from hand marks: embedding similarity failed the pre-set rule (its threshold,
+  # 0.9943, caught 3 of 16 marked duplicates) because a duplicate here is one role listed for several
+  # cities. company_title caught 12 of the 16 with no false merges in those 50 pairs, then 30 of 30
+  # fresh pairs it merges were marked the same job. Reproduce: dedupe-eval --rule company_title
+  # --pairs data/dedupe_pairs.csv data/dedupe_pairs_title_check.csv
+  rule: company_title
+  model: BAAI/bge-small-en-v1.5   # rule: embedding only
+  threshold: null                 # rule: embedding only

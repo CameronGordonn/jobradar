@@ -38,5 +38,5 @@ sources:
         description: Per-source row count against its trailing 7-run median.
         freshness: null
       - name: job_clusters
-        description: Near-duplicate clusters from embedding similarity. Empty until a threshold is chosen.
+        description: Near-duplicate clusters (dedupe.rule in sources.yaml; company + title). threshold is null under that rule.
         freshness: null
