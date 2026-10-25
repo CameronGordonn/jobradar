@@ -94,7 +94,7 @@ def inbox(con: DB, cfg: dict, min_fit: int = 5) -> list[dict]:
                s.fit, s.recommend, s.variant, s.evidence, s.gaps, s.dealbreakers, s.pitch, s.model,
                j.first_seen >= ? AS is_new
         FROM jobs j JOIN scores s USING (key)
-        WHERE s.fit >= ? AND j.last_seen >= ? AND (j.closes IS NULL OR j.closes >= ?)
+        WHERE j.filter_reason IS NULL AND s.fit >= ? AND j.last_seen >= ? AND (j.closes IS NULL OR j.closes >= ?)
           AND NOT EXISTS (SELECT 1 FROM applications a JOIN jobs j2 USING (key)
                           WHERE j2.dedupe_key = j.dedupe_key)
         ORDER BY s.fit DESC, j.first_seen DESC, j.key""", (new_cut, min_fit, open_cut, date.today().isoformat()))

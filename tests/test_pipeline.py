@@ -125,6 +125,15 @@ def test_non_us_remote_blocked(cfg):
     assert loc(None) == "location"   # {"name": null} from Greenhouse: no location, not a crash
 
 
+def test_exclude_org_drops_military_departments():
+    f = {"exclude_org": ["Department of the Air Force", "Department of Defense"]}
+    def org(o):
+        return filters.check(Job("usajobs", "1", "Operations Research Analyst", o, "", "u", ""), f)
+    assert org("Air Force Civilian Career Training (Department of the Air Force)") == "org:Department of the Air Force"
+    assert org("Defense Logistics Agency (Department of Defense)") == "org:Department of Defense"
+    assert org("Bureau of Land Management (Department of the Interior)") is None
+
+
 def test_years_regex():
     f = filters.min_years_required
     assert f("Requires 3+ years of professional experience") == 3

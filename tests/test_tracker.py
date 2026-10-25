@@ -44,6 +44,8 @@ def test_inbox_open_scored_untouched_best_first(con):
     assert r["area"] == "climate" and r["referral"] == "Pat (eng manager)" and r["gaps"] == ["Spark"]
     tracker.set_status(con, "greenhouse:1", "saved")
     assert [r["key"] for r in tracker.inbox(con, CFG, min_fit=5)] == ["greenhouse:3"]
+    con.execute("UPDATE jobs SET filter_reason = 'org:Department of Defense' WHERE key = 'greenhouse:3'")
+    assert tracker.inbox(con, CFG, min_fit=5) == []   # a filter added after scoring still applies
 
 
 def test_a_status_on_one_duplicate_clears_the_group(con):
