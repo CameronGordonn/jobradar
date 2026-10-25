@@ -86,6 +86,7 @@ dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--p
 dialog::backdrop { background: rgba(0,0,0,.35); }
 dialog label { display: block; font-size: 13px; color: var(--muted); margin-top: 10px; }
 dialog input, dialog textarea, dialog select { width: 100%; margin-top: 3px; }
+.banner { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px; }
 #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 #toast.show { opacity: 1; }
 @media (max-width: 860px) { .cols { grid-template-columns: 1fr 1fr; } }
@@ -106,6 +107,7 @@ dialog input, dialog textarea, dialog select { width: 100%; margin-top: 3px; }
   </div>
 </header>
 <main>
+  <div id="health" class="banner" role="alert" hidden></div>
   <section id="tab-inbox">
     <div class="filters">
       <span id="areas"></span>
@@ -302,7 +304,15 @@ $("#dlg").addEventListener("close", async () => {
   const body = Object.fromEntries(new FormData($("#addform")));
   await api("/api/manual", body); toast("Added"); loadPipeline();
 });
-loadInbox(); loadPipeline();
+async function loadHealth() {
+  const h = await api("/api/health");
+  const el = $("#health");
+  if (!h.stale) { el.hidden = true; return; }
+  const ago = h.hours_since_load == null ? "never" : Math.round(h.hours_since_load / 24 * 10) / 10 + " days ago";
+  el.textContent = `The daily run last loaded postings ${ago}. Check the scheduled task and data/run.log: postings can close while nothing is running.`;
+  el.hidden = false;
+}
+loadHealth(); loadInbox(); loadPipeline();
 </script>
 </body>
 </html>

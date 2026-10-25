@@ -148,17 +148,24 @@ def test_report_end_to_end_and_private_data_stays_private(world, tmp_path):
     ev.embed_pool(lab, ["resume"], "bge-small", encode=enc)
     rubric = "# Rubric\n## Candidate context\n- Recent graduate in applied math.\n## How to judge\n- Be strict."
     assert ev.candidate_section(rubric) == "- Recent graduate in applied math."
+    shares = ev.rubric_control(lab, ["resume"], rubric, encode=enc)
+    assert set(shares) == {"tfidf+rubric", "emb:bge-small+rubric"} and all(0 <= v <= 1 for v in shares.values())
     n_pool = lab.scalar("SELECT COUNT(*) FROM pool")
-    assert ev.rubric_control(lab, ["resume"], rubric, encode=enc) == {"tfidf+rubric": n_pool,
-                                                                      "emb:bge-small+rubric": n_pool}
+    assert lab.scalar("SELECT COUNT(*) FROM ranker_scores WHERE ranker = 'tfidf-refit'") == n_pool
     ev.count_system_tokens(api, lab, "claude-haiku-4-5-20251001", SYSTEM, TOOL)
     ev.count_system_tokens(api, lab, "claude-sonnet-5-5", SYSTEM, TOOL)
 
     out, private = tmp_path / "results", tmp_path / "data/eval_details.md"
     m = report.build({"recall": {"top_k": 40}}, lab, main, out, private, n_boot=200)
     assert m["comparison"]["apply"]["status"] == "ok"
-    assert set(m["comparison"]["apply"]["rankers"]) == {"tfidf", "emb:bge-small", "tfidf+rubric", "emb:bge-small+rubric",
-                                                       "claude:claude-haiku-4-5-20251001", "claude:claude-sonnet-5-5"}
+    # controls are compared against their own baselines, not in the main table
+    assert set(m["comparison"]["apply"]["rankers"]) == {"tfidf", "emb:bge-small", "claude:claude-haiku-4-5-20251001",
+                                                       "claude:claude-sonnet-5-5"}
+    rc = m["rubric_control"]["controls"]
+    assert rc["tfidf+rubric"]["baseline"] == "tfidf-refit" and rc["emb:bge-small+rubric"]["baseline"] == "emb:bge-small"
+    assert rc["tfidf+rubric"]["rubric_query_best_match_share"] == shares["tfidf+rubric"]
+    lk = m["leakage_check"]
+    assert lk["status"] == "ok" and lk["scores_after_first_label"] == lk["scores"]  # fixture labels came first
     assert m["stability"]["claude-sonnet-5-5"]["spearman"] == pytest.approx(1.0)  # the fake is deterministic
     assert m["stage0_audit"]["labeled"] == 30
     s0 = m["stage0_audit"]   # how much a clean filter audit can say

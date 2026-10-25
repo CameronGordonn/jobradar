@@ -5,7 +5,7 @@ import html
 import logging
 import re
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC
 from pathlib import Path
 
 import yaml
@@ -130,17 +130,17 @@ def cmd_score(cfg, con, args=None, client=None):
     min_recall = cfg.get("recall", {}).get("min_recall", 0.0)
     # One call per dedupe group: skip a posting when another with the same org + title +
     # location already has a score, and send only the best-recall member of a new group.
-    # Only postings still on their board: one not seen within 2 days of the latest load has closed,
-    # and scoring it spends a call on a job nobody can apply to.
-    latest = con.scalar("SELECT max(last_seen) FROM jobs WHERE source != 'manual'")
-    open_since = (datetime.fromisoformat(latest) - timedelta(days=2)).isoformat(timespec="seconds") if latest else ""
+    # Only postings still on their board (db.still_open): scoring a closed one spends a call on a
+    # job nobody can apply to. Oldest first: the eval found good postings are lost by closing
+    # before their turn, not by ranking, and stage 1 order barely tracks fit (AUC 0.67), so
+    # recall only breaks ties within a day.
     rows = con.query(
-        """SELECT j.* FROM jobs j LEFT JOIN scores s ON s.key = j.key
-           WHERE j.filter_reason IS NULL AND s.key IS NULL AND COALESCE(j.recall, 0) >= ? AND j.last_seen >= ?
+        f"""SELECT j.* FROM jobs j LEFT JOIN scores s ON s.key = j.key
+           WHERE j.filter_reason IS NULL AND s.key IS NULL AND COALESCE(j.recall, 0) >= ? AND {db.still_open("j")}
              AND NOT EXISTS (SELECT 1 FROM jobs j2 JOIN scores s2 ON s2.key = j2.key
                              WHERE j2.dedupe_key = j.dedupe_key)
            QUALIFY row_number() OVER (PARTITION BY j.dedupe_key ORDER BY j.recall DESC, j.key) = 1
-           ORDER BY j.recall DESC, j.key LIMIT ?""", (min_recall, open_since, top_k))
+           ORDER BY j.first_seen, j.recall DESC, j.key LIMIT ?""", (min_recall, top_k))
     n = _rerank_rows(cfg, con, rows, client)
     log.info("score: reranked %d jobs", n)
 
@@ -237,8 +237,8 @@ def cmd_eval_embed(cfg, con, args):
         n = evaluation.embed_pool(lab, resumes, name)
         print(f"emb:{name}: scored {n} pool postings")
     if args.rubric_control:
-        for ranker, n in evaluation.rubric_control(lab, resumes, cfg["eval_rubric_text"]).items():
-            print(f"{ranker}: scored {n} pool postings")
+        for ranker, share in evaluation.rubric_control(lab, resumes, cfg["eval_rubric_text"]).items():
+            print(f"{ranker}: scored the pool; the rubric query is the best match for {share:.0%} of postings")
 
 
 def cmd_eval_score(cfg, con, args):

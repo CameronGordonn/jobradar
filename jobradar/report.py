@@ -6,25 +6,29 @@ alongside a label goes to data/eval_details.md, which is gitignored.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 
+from . import db, labeling, rerank
 from . import evaluation as ev
-from . import labeling, rerank
 from .db import DB, utcnow
 
 RANKER_NAMES = {
     "tfidf": "TF-IDF (current stage 1)",
     "emb:bge-small": "Embeddings, bge-small-en-v1.5",
     "emb:minilm": "Embeddings, all-MiniLM-L6-v2",
+    "tfidf-refit": "TF-IDF refit on the pool, resumes only (control baseline)",
     "tfidf+rubric": "TF-IDF refit, resumes + rubric candidate section (control)",
     "emb:bge-small+rubric": "Embeddings, bge-small, resumes + rubric candidate section (control)",
     "claude:claude-haiku-4-5-20251001": "Claude Haiku 4.5 rerank",
     "claude:claude-sonnet-5-5": "Claude Sonnet 5.5 rerank",
     "claude:claude-haiku-5-5": "Claude Haiku 5.5 rerank",
 }
+# Reported in their own section against their own baselines (ev.CONTROL_BASELINE), not in the
+# main comparison: their difference from frozen TF-IDF would mix the refit with the rubric query.
+CONTROLS = {"tfidf-refit", "tfidf+rubric", "emb:bge-small+rubric"}
 FIGURE_RANKERS = ["tfidf", "emb:bge-small", "claude:claude-haiku-4-5-20251001", "claude:claude-sonnet-5-5"]
 # Reference categorical palette, light mode, slots 1-4 in fixed order (dataviz skill).
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
@@ -58,7 +62,8 @@ def labeled_a(lab: DB) -> list[dict]:
 def compare(lab: DB, positive: str, n_boot: int) -> dict:
     labs = labeled_a(lab)
     scores = ranker_scores(lab)
-    order = [r for r in RANKER_NAMES if r in scores] + sorted(set(scores) - set(RANKER_NAMES))
+    order = [r for r in RANKER_NAMES if r in scores and r not in CONTROLS] + sorted(
+        set(scores) - set(RANKER_NAMES) - CONTROLS)
     # Claude rankers join only once they cover the labeled postings; otherwise they'd shrink the shared set.
     keys = {r["job_key"] for r in labs}
     use = [r for r in order if r == "tfidf" or len(keys & set(scores[r])) >= 0.95 * len(keys)]
@@ -71,6 +76,44 @@ def compare(lab: DB, positive: str, n_boot: int) -> dict:
     res["status"] = "ok"
     res["excluded"] = [r for r in order if r not in use]
     return res
+
+
+def rubric_control(lab: DB, n_boot: int) -> dict:
+    """Each control against the same ranker without the rubric query, on matched resamples."""
+    labs, scores = labeled_a(lab), ranker_scores(lab)
+    shares = {r["ranker"]: r["value"] for r in lab.query(
+        "SELECT ranker, value FROM control_stats WHERE stat = 'rubric_query_is_best_match'")}
+    out = {}
+    for ctl, base in ev.CONTROL_BASELINE.items():
+        if ctl not in scores or base not in scores:
+            continue
+        common = [r for r in labs if r["job_key"] in scores[ctl] and r["job_key"] in scores[base]]
+        y = np.array([int(r["label"] == "apply") for r in common])
+        if len(common) < 10 or not 0 < y.sum() < len(y):
+            continue
+        b = ev.bootstrap(y, {m: np.array([scores[m][r["job_key"]] for r in common]) for m in (base, ctl)},
+                         n_boot=n_boot, baseline=base)
+        d = b["rankers"][ctl]["diff_vs_" + base]
+        out[ctl] = {"baseline": base, "n": len(common), "positives": int(y.sum()),
+                    "auc_baseline": b["rankers"][base]["point"]["auc"],
+                    "auc_control": b["rankers"][ctl]["point"]["auc"],
+                    "auc_diff": d["auc"]["point"], "auc_diff_ci": d["auc"]["ci"],
+                    "ap_diff": d["ap"]["point"], "ap_diff_ci": d["ap"]["ci"],
+                    "rubric_query_best_match_share": shares.get(ctl)}
+    return {"status": "ok", "controls": out} if out else {
+        "status": "pending", "reason": "run eval-embed --rubric-control after set a is labeled"}
+
+
+def leakage_check(lab: DB) -> dict:
+    """Were the Claude eval scores made before any label existed? If so, nothing in the rubric or
+    prompts could have been tuned on the labels those scores are judged against."""
+    s = lab.query("SELECT COUNT(*) n, max(scored_at) last FROM eval_scores")[0]
+    first = lab.scalar("SELECT min(labeled_at) FROM labels")
+    if not s["n"] or first is None:
+        return {"status": "pending", "reason": "needs both Claude eval scores and labels"}
+    after = lab.scalar("SELECT COUNT(*) FROM eval_scores WHERE scored_at >= ?", (first,))
+    return {"status": "ok", "scores": int(s["n"]), "last_score_at": str(s["last"]), "first_label_at": str(first),
+            "scores_after_first_label": int(after), "all_before_labels": after == 0}
 
 
 def production_cost(lab: DB, model: str, top_k: int) -> dict | None:
@@ -92,9 +135,23 @@ def production_cost(lab: DB, model: str, top_k: int) -> dict | None:
         usd = rerank.cost_usd(model, first) + (top_k - 1) * rerank.cost_usd(model, later)
     else:
         usd = top_k * rerank.cost_usd(model, {"input_tokens": r["inp"], "output_tokens": r["outp"]})
+    per_call = rerank.cost_usd(model, later if caches else {"input_tokens": r["inp"], "output_tokens": r["outp"]})
     return {"calls_measured": int(r["n"]), "mean_input_tokens": float(r["inp"]), "mean_output_tokens": float(r["outp"]),
             "system_tokens": int(sys_tokens), "min_cacheable": rerank.MIN_CACHEABLE[fam], "system_caches": caches,
-            "top_k": top_k, "usd_per_run": usd}
+            "top_k": top_k, "usd_per_run": usd, "usd_per_posting": per_call}
+
+
+def daily_volume(main: DB | None) -> dict | None:
+    """New postings passing stage 0 per run day (by first_seen date), skipping the first day,
+    which loads everything already open. This, not top_k, is what a normal run sends."""
+    if main is None:
+        return None
+    days = [r["n"] for r in main.query("""SELECT CAST(first_seen AS DATE) d, COUNT(*) n FROM jobs
+                                         WHERE filter_reason IS NULL AND source != 'manual'
+                                         GROUP BY 1 ORDER BY 1""")][1:]
+    if not days:
+        return None
+    return {"run_days": len(days), "median": float(np.median(days)), "min": int(min(days)), "max": int(max(days))}
 
 
 def stability(lab: DB) -> dict:
@@ -170,15 +227,19 @@ def topk_audit(lab: DB, main: DB | None, top_k: int) -> tuple[dict, list[dict]]:
     if main is not None:
         # The daily run is a queue: each run scores the best unscored open postings and the rest
         # wait. A positive is lost only if its posting closes before its turn.
-        latest = main.scalar("SELECT max(last_seen) FROM jobs WHERE source != 'manual'")
         rows = {(r["source"], r["source_id"]): r for r in main.query(
-            "SELECT j.source, j.source_id, j.last_seen, s.key IS NOT NULL AS scored "
-            "FROM jobs j LEFT JOIN scores s USING (key)")}
-        cut = (datetime.fromisoformat(latest) - timedelta(days=2)).isoformat() if latest else ""
+            f"""SELECT j.source, j.source_id, j.first_seen, s.scored_at, s.key IS NOT NULL AS scored,
+                       {db.still_open("j")} AS still_open
+                FROM jobs j LEFT JOIN scores s USING (key)""")}
         got = [rows.get((p["source"], p["source_id"])) for p in pos]
+        out["as_of"] = str(main.scalar("SELECT max(last_seen) FROM jobs WHERE source != 'manual'"))[:10]
         out["reached_claude_in_daily_runs"] = sum(bool(g and g["scored"]) for g in got)
-        out["closed_before_scored"] = sum(bool(g and not g["scored"] and g["last_seen"] < cut) for g in got)
-        out["waiting"] = sum(bool(g and not g["scored"] and g["last_seen"] >= cut) for g in got)
+        out["closed_before_scored"] = sum(bool(g and not g["scored"] and not g["still_open"]) for g in got)
+        out["waiting"] = sum(bool(g and not g["scored"] and g["still_open"]) for g in got)
+        # For a job hunt the useful number is how long a good posting waits to be scored.
+        waits = [(datetime.fromisoformat(g["scored_at"]) - datetime.fromisoformat(g["first_seen"])).days
+                 for g in got if g and g["scored"]]
+        out["days_to_score"] = {"median": float(np.median(waits)), "max": int(max(waits))} if waits else None
     return out, lost
 
 
@@ -205,7 +266,8 @@ def agreement(lab: DB, top_k: int) -> dict:
     (in a single batch those would never reach Claude)."""
     scores = ranker_scores(lab)
     keys = [r["job_key"] for r in items_for_set_a(lab)]
-    names = [m for m in RANKER_NAMES if m in scores and sum(k in scores[m] for k in keys) >= 0.95 * len(keys)]
+    names = [m for m in RANKER_NAMES if m in scores and m not in CONTROLS
+             and sum(k in scores[m] for k in keys) >= 0.95 * len(keys)]
     common = [k for k in keys if all(k in scores[m] for m in names)]
     out = {"n": len(common), "spearman": {}, "claude_apply_below_cutoff": {}}
     if len(common) < 10:
@@ -328,13 +390,17 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
     sa = self_agreement(lab)
     ag = agreement(lab, top_k)
     sp = spend(lab)
+    rc = rubric_control(lab, n_boot)
+    lk = leakage_check(lab)
+    vol = daily_volume(main)
     fig_ok = figure(results["apply"], out_dir / "precision_at_k.png")
 
     metrics = {"generated_at": utcnow().replace(tzinfo=UTC).isoformat(), "command": COMMAND,
                "snapshot": {k: (str(v) if k == "created_at" else v) for k, v in snap.items()},
                "label_counts": {k: {"items": n, "labeled": d} for k, (n, d) in counts.items()},
                "comparison": results, "production_cost": costs, "stability": stab, "stage0_audit": s0,
-               "topk_audit": tk, "self_agreement": sa, "ranker_agreement": ag, "api_spend": sp}
+               "topk_audit": tk, "self_agreement": sa, "ranker_agreement": ag, "api_spend": sp,
+               "rubric_control": rc, "leakage_check": lk, "daily_volume": vol}
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "eval_metrics.json").write_text(json.dumps(metrics, indent=2, default=str))
 
@@ -347,7 +413,13 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
           "- Set a: 200 of them, 20 from each stage 1 recall decile. Because the deciles are equal-sized, "
           "this is close to a uniform sample of the pool, so metrics over set a describe the pool.",
           "- Labels: apply / maybe / no, given blind (no scores, ranks or filter reasons shown).",
-          "- Labeled so far: " + ", ".join(f"set {k} {d}/{n}" for k, (n, d) in sorted(counts.items())) + ".", ""]
+          "- Labeled so far: " + ", ".join(f"set {k} {d}/{n}" for k, (n, d) in sorted(counts.items())) + "."]
+    if lk["status"] == "ok":
+        L.append(f"- Label timing: {lk['scores_after_first_label']} of {lk['scores']} Claude eval scores were made "
+                 f"after the first label (last score {lk['last_score_at'][:16]} UTC, first label "
+                 f"{lk['first_label_at'][:16]} UTC)" + (", so the prompts could not have been tuned on the labels."
+                                                         if lk["all_before_labels"] else "."))
+    L.append("")
     if fig_ok:
         L += ["![Precision at k](precision_at_k.png)", ""]
     L += ["## Rankers compared", "",
@@ -362,20 +434,40 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
           "Precision@k uses the expected value over random order within tied scores.", ""]
     for pos, title in (("apply", "Positive = apply"), ("apply_or_maybe", "Positive = apply or maybe")):
         L += [f"## {title}", ""] + _metric_table(results[pos]) + [""]
-    L += ["## Cost per daily run", ""]
+    L += ["## Rubric control", ""]
+    if rc["status"] == "ok":
+        L += ["Only Claude sees the rubric. Each control is a recall ranker given the rubric's candidate section "
+              "as one more query, compared with the same ranker without it (TF-IDF is refit on the pool for both "
+              "arms). Scores are a max over queries, so the extra query only matters where it is the best match. "
+              "This tests the candidate description, not the rubric's judging rules (dealbreakers, how to read "
+              "seniority), which a retrieval model can't apply.", "",
+              "| Control | AUC without | AUC with | Paired difference (95% CI) | Rubric query is the best match |",
+              "|---|---|---|---|---|"]
+        for ctl, c in rc["controls"].items():
+            share = "n/a" if c["rubric_query_best_match_share"] is None else f"{c['rubric_query_best_match_share']:.0%}"
+            L.append(f"| {_name(ctl)} | {c['auc_baseline']:.3f} | {c['auc_control']:.3f} | "
+                     f"{c['auc_diff']:+.3f} [{c['auc_diff_ci'][0]:+.3f}, {c['auc_diff_ci'][1]:+.3f}] | "
+                     f"{share} of pool postings |")
+    else:
+        L.append(f"Pending: {rc['reason']}.")
+    L.append("")
+    L += ["## Cost per posting", ""]
     if any(costs.values()):
-        L += [f"One daily run sends the top {top_k} postings by recall to Claude, one call each, at standard "
-              "prices. Computed from token counts measured on the eval calls.", "",
+        vol_txt = (f" Since the first load, a run day has brought a median of {vol['median']:.0f} new postings that "
+                   f"pass stage 0 (range {vol['min']} to {vol['max']} over {vol['run_days']} days), so that is what a "
+                   f"normal run sends; the cap of {top_k} only applies on backlog days." if vol else "")
+        L += ["One call per posting at standard prices, from token counts measured on the eval calls, with the "
+              "system prompt cached when it is long enough for the model." + vol_txt, "",
               "| Model | Calls measured | Mean input tokens | Mean output tokens | System prompt caches? "
-              "| USD per run |",
-              "|---|---|---|---|---|---|"]
+              "| USD per posting | USD at the median day |",
+              "|---|---|---|---|---|---|---|"]
         for m, c in costs.items():
             if c:
                 caches = f"{'yes' if c['system_caches'] else 'no'} ({c['system_tokens']} tokens, " \
                          f"minimum {c['min_cacheable']})"
+                day = f"${c['usd_per_posting'] * vol['median']:.3f}" if vol else "n/a"
                 L.append(f"| {m} | {c['calls_measured']} | {c['mean_input_tokens']:.0f} | "
-                         f"{c['mean_output_tokens']:.0f} | {caches} | "
-                         f"${c['usd_per_run']:.3f} |")
+                         f"{c['mean_output_tokens']:.0f} | {caches} | ${c['usd_per_posting']:.4f} | {day} |")
     else:
         L.append("Pending: no Claude calls measured yet.")
     L += ["", "## LLM stability", "",
@@ -419,11 +511,14 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
         for m, by in tk["below_cutoff_if_one_batch"].items():
             L.append(f"| {_name(m)} | " + " | ".join(f"{by[k]} of {tk['positives']}" for k in cuts) + " |")
         if "reached_claude_in_daily_runs" in tk:
-            L += ["", "The daily run is a queue rather than one batch: each run scores the best unscored open "
-                  "postings, up to the cap, and the rest wait for later runs. A posting is missed only if it closes "
-                  f"first. So far {tk['reached_claude_in_daily_runs']} of {tk['positives']} apply-labeled postings "
-                  f"have been scored by Claude, {tk['closed_before_scored']} closed before their turn, and "
-                  f"{tk['waiting']} are still waiting."]
+            wait = tk.get("days_to_score")
+            L += ["", "The daily run is a queue rather than one batch: each run scores unscored open postings, "
+                  "oldest first, up to the cap, and the rest wait for later runs. A posting is missed only if it "
+                  f"closes first. As of {tk['as_of']}, {tk['reached_claude_in_daily_runs']} of {tk['positives']} "
+                  f"apply-labeled postings have been scored by Claude, {tk['closed_before_scored']} closed before "
+                  f"their turn, and {tk['waiting']} are still waiting."
+                  + (f" From first seen to scored took a median of {wait['median']:.0f} days (longest {wait['max']})."
+                     if wait else "")]
     else:
         L.append(f"Pending: {tk['reason']}.")
     L += ["", "## Ranker agreement (no labels needed)", ""]

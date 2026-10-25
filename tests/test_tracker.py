@@ -95,6 +95,13 @@ def test_manual_job_skips_scoring_and_shows_in_pipeline(con):
         tracker.add_manual(con, " ", "Acme")
 
 
+def test_health_flags_a_quiet_pipeline(con):
+    assert tracker.health(con)["stale"] is False
+    con.execute("UPDATE jobs SET last_seen = '2026-01-01T00:00:00+00:00'")
+    h = tracker.health(con)
+    assert h["stale"] and h["hours_since_load"] > tracker.STALE_HOURS
+
+
 def test_area_rules_and_referral_matching():
     assert tracker.area_for("Bureau of Land Management", "Physical Scientist (Remote Sensing)", {}) == "geospatial"
     assert tracker.area_for("NOAA", "Meteorologist", {}) == "climate"
