@@ -13,7 +13,7 @@ A job-search pipeline I built with Claude Code and run every morning in my own s
 | Area | What the project shows |
 |---|---|
 | **Data engineering** | Daily ELT on GitHub Actions. Raw API payloads land in DuckDB; dbt builds staging, intermediate, and mart models with tests, source freshness, unit tests, and a snapshot of every version of each posting. A row-count monitor opens a GitHub issue when a source breaks. The warehouse carries over between runs as an Actions artifact, backed up weekly as Parquet in a GitHub Release. |
-| **ML evaluation** | 200 blind hand labels from a stratified sample drawn once. Six rankers compared with bootstrap confidence intervals, paired differences, cost per run, and score stability. The embedding model and the dedupe acceptance rule were fixed before seeing results, and the one rule found after looking at data was checked on fresh samples before it shipped. |
+| **ML evaluation** | 200 blind hand labels from a stratified sample drawn once. Six rankers and two controls compared with bootstrap confidence intervals, paired differences, cost per run, and score stability. The embedding model and the dedupe acceptance rule were fixed before seeing results, and the one rule found after looking at data was checked on fresh samples before it shipped. |
 | **LLM application** | Claude API with structured output through a tool call, a cached system prompt, the Batch API for evaluation at half price, a per-run spending cap, and cost measured from token counts. |
 | **Software** | Python adapters for four job APIs, an offline pytest suite, ruff and sqlfluff in CI, and a local web app for tracking applications. |
 
@@ -21,14 +21,15 @@ A job-search pipeline I built with Claude Code and run every morning in my own s
 
 | Question | Answer |
 |---|---|
-| Does the Claude rerank beat keyword matching? | Yes. Precision@10 on postings I'd apply to is 0.61 to 0.73 depending on the model, against 0.20 for TF-IDF. The gain has a 95% CI above zero for every Claude model tried. |
-| Which model? | Haiku 4.5, Haiku 5.5, and Sonnet 5.5 can't be told apart with 12 positive labels, so production runs the cheapest: Haiku 5.5, $0.04 per 40 postings scored (Sonnet 5.5: $0.56). |
-| Do the hard filters throw away good jobs? | 0 of 30 sampled rejections were jobs I'd apply to or consider. |
-| Where does the pipeline lose good jobs? | At recall. Ranked over the whole pool, TF-IDF put 10 of the 12 "apply" postings below the cutoff for Claude, so the cutoff went from 40 to 100 postings per run. |
-| How are duplicate postings handled? | An embedding-similarity threshold failed its pre-set acceptance rule, catching 3 of 16 marked duplicates. A same-company, same-title rule then matched 30 of 30 fresh hand-checked pairs and collapses 19% of open postings. |
+| Does the Claude rerank beat keyword matching? | Yes. ROC AUC on postings I'd apply to is 0.92 to 0.96 for the three Claude models against 0.67 for TF-IDF. The paired differences are +0.25 to +0.29, and every 95% CI clears zero (the lowest bound is +0.08). Precision@10 points the same way (0.61 to 0.73 against 0.20) but its intervals run from about 0.3 to 1.0. |
+| Is that just because only Claude sees the rubric? | Not by this test. Given the rubric's candidate section as an extra query, TF-IDF moves from 0.670 to 0.677 and the bge-small embeddings from 0.676 to 0.658. All Claude eval scores were made before I labeled anything. The caveat that remains: I wrote the rubric and made the labels, so Claude is scored on following my own stated preferences, which is the job of a personal ranker but not an independent judgment. |
+| Which model? | Haiku 5.5, accepting a possible small loss in quality. With 12 positive labels the three models can't be separated, but Haiku 5.5 has the lowest point estimates and the least exact repeatability: rescoring the same 50 postings gave the same score 58% of the time (Sonnet 5.5: 94%), though always within one point. It costs $0.04 per 40 postings scored against $0.56 for Sonnet 5.5. |
+| How many good jobs reach Claude? | 10 of the 12 "apply" postings have been scored. The other 2 closed during a three-week stretch with no runs while they waited in the queue. Stage 1 is a weak filter (ranked as one batch, TF-IDF puts 9 of the 12 below the top 100), so it now only orders a queue: each run scores up to `recall.top_k` of the best unscored open postings (100 in my config, 40 in the example) and the rest wait. On normal days 5 to 45 new postings pass the filters, at about $0.001 each on Haiku 5.5, so the cap only bites on backlog days. Scoring the whole 551-posting pool would cost about $0.55. |
+| Do the hard filters throw away good jobs? | No loss detected, but the test is weak. None of 30 sampled rejections were jobs I'd apply to or consider. If rejected postings were as good as kept ones (6% apply), that would still happen 16% of the time, and the labels allow up to about 10% of rejections being worth applying to. |
+| How are duplicate postings handled? | An embedding-similarity threshold failed its pre-set acceptance rule, catching 3 of 16 marked duplicates. A same-company, same-title rule then matched 30 of 30 fresh hand-checked pairs and collapses 19% of open postings. Those marks were made from titles and locations, and the descriptions of some merged pairs differ (several are translations), so a few merges may join different teams. The rule affects dashboard counts only; ranking and the tracker treat postings as duplicates only with the same company, title, and location. |
 | What did the evaluation cost? | $2.30 in API calls. |
 
-The main caveat: one person labeled everything, and two thirds of the labeled postings come from five large employers. A relabeling round to measure my own consistency is scheduled.
+The main caveats: one person labeled everything, two thirds of the labeled postings come from five large employers, and the relabeling round that measures my own consistency opens Oct 31.
 
 **Stack:** Python, SQL, DuckDB, dbt, GitHub Actions, GitHub Pages, Claude API (Anthropic SDK), scikit-learn, sentence-transformers, and pytest.
 
@@ -67,7 +68,7 @@ The public half needs only `sources.yaml` and never touches the personal half. L
 | Stage | What it does |
 |---|---|
 | 0. Hard filters | Title words (senior, staff, intern, and non-technical sales titles such as Account Executive), employer (military departments), location allow and block lists, the source's country field, clearance wording, minimum years of experience, and USAJOBS hiring path and GS grade. Biased toward keeping postings. |
-| 1. Recall | TF-IDF (words and word pairs) cosine against each resume variant, best match kept. The top `recall.top_k` unscored postings go on (40 in the example config). |
+| 1. Recall | TF-IDF (words and word pairs) cosine against each resume variant, best match kept. It orders a queue: each run sends the top `recall.top_k` unscored postings still on their boards (40 in the example config), and the rest wait for later runs. |
 | 2. Rerank | Claude reads the posting against the rubric and resumes and returns a 0-10 fit score, a recommendation, gaps, and an opening line through a tool call. One posting per call. The rubric and resumes are a cached system prompt. |
 | Digest | The top 10 new postings above the fit threshold, as markdown. |
 | Tracker | A local page over the same database: an inbox of scored postings still open, the application pipeline, and weekly reply rates. |
@@ -87,13 +88,13 @@ Rankers compared on the same labeled postings: TF-IDF (stage 1 as it ran), local
 ```bash
 python -m jobradar.cli label-sample                 # once
 python -m jobradar.cli label --set a,b              # blind labeling
-python -m jobradar.cli eval-embed                   # local embedding scores (pip install -r requirements-eval.txt)
+python -m jobradar.cli eval-embed --rubric-control  # local embedding scores and the rubric control (pip install -r requirements-eval.txt)
 python -m jobradar.cli eval-score --model claude-haiku-5-5 --run 1          # prints a cost estimate
 python -m jobradar.cli eval-score --model claude-haiku-5-5 --run 1 --yes    # spends, within the eval budget
 python -m jobradar.cli eval --report                # results/eval_summary.md, eval_metrics.json, precision_at_k.png
 ```
 
-Claude scoring goes through the Batch API at half price, and `eval-score` refuses to pass a $5 eval budget unless told to. Anything that pairs a posting with a label is written to a gitignored file, and a test checks that no labeled posting title reaches `results/`.
+The `eval` section of `config.yaml` can pin the resumes and rubric the evaluation ran with, so changing the production ones later doesn't change what a rerun measures. Claude scoring goes through the Batch API at half price, and `eval-score` refuses to pass a $5 eval budget unless told to. Anything that pairs a posting with a label is written to a gitignored file, and a test checks that no labeled posting title reaches `results/`.
 
 ## Data pipeline
 

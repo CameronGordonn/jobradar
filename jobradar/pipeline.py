@@ -292,6 +292,7 @@ def main(argv=None):
             print(f"Collapses {res['collapsed_share']:.1%} of {len(jobs)} open postings "
                   f"({res['collapsed_share_exact_only']:.1%} from exact matches alone). Wrote {out}.")
             return
+        # rule: embedding, the rejected method; reproduces results/dedupe_eval.json.
         res = dedupe.evaluate(dedupe.read_pairs(Path(args.pairs[0])))
         if res["status"] != "ok":
             print(f"pending: {res['reason']}")
@@ -330,6 +331,8 @@ def main(argv=None):
             dedupe.write_clusters(con, mapping, None)
             print(f"clustered {len(jobs)} postings by company + title: {dedupe.collapsed_share(mapping):.1%} collapsed")
             return
+        # rule: embedding. Rejected by the hand marks (results/dedupe_eval.json); kept so the
+        # comparison can be rerun, not for production use.
         if t is None:
             t = dcfg.get("threshold")
         if t is None:

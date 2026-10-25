@@ -6,7 +6,7 @@ alongside a label goes to data/eval_details.md, which is gitignored.
 from __future__ import annotations
 
 import json
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +19,8 @@ RANKER_NAMES = {
     "tfidf": "TF-IDF (current stage 1)",
     "emb:bge-small": "Embeddings, bge-small-en-v1.5",
     "emb:minilm": "Embeddings, all-MiniLM-L6-v2",
+    "tfidf+rubric": "TF-IDF refit, resumes + rubric candidate section (control)",
+    "emb:bge-small+rubric": "Embeddings, bge-small, resumes + rubric candidate section (control)",
     "claude:claude-haiku-4-5-20251001": "Claude Haiku 4.5 rerank",
     "claude:claude-sonnet-5-5": "Claude Sonnet 5.5 rerank",
     "claude:claude-haiku-5-5": "Claude Haiku 5.5 rerank",
@@ -128,9 +130,20 @@ def stage0_audit(lab: DB) -> tuple[dict, list[dict]]:
     if done:
         w = np.array([r["weight"] for r in done])
         est = float((w * np.array([r["label"] == "apply" for r in done])).sum() / w.sum())
-    summary = {"sampled": len(rows), "labeled": len(done), "apply": sum(r["label"] == "apply" for r in done),
+    n_apply = sum(r["label"] == "apply" for r in done)
+    summary = {"sampled": len(rows), "labeled": len(done), "apply": n_apply,
                "maybe": sum(r["label"] == "maybe" for r in done), "by_rule": fams,
                "weighted_apply_share_of_filtered": est}
+    if done:
+        # How much a clean result says: the chance of seeing this few apply labels if filtered postings
+        # were as good as the ones stage 0 keeps, and the largest apply rate the labels can't rule out.
+        from scipy.stats import beta, binom
+        a = lab.query("""SELECT COUNT(*) n, COUNT(*) FILTER (WHERE l.label='apply') k FROM labels l
+                         WHERE l.set_name='a'""")[0]
+        p_kept = a["k"] / a["n"] if a["n"] else None
+        summary.update(apply_rate_kept=p_kept,
+                       chance_if_as_good_as_kept=float(binom.cdf(n_apply, len(done), p_kept)) if p_kept else None,
+                       apply_rate_upper_95=float(beta.ppf(0.95, n_apply + 1, len(done) - n_apply)))
     return summary, [r for r in done if r["label"] in ("apply", "maybe")]
 
 
@@ -141,22 +154,31 @@ def topk_audit(lab: DB, main: DB | None, top_k: int) -> tuple[dict, list[dict]]:
     if not pos:
         return {"status": "pending", "reason": "no apply labels in set a yet"}, []
     scores = ranker_scores(lab)
-    out = {"status": "ok", "positives": len(pos), "top_k": top_k, "pool": lab.scalar("SELECT COUNT(*) FROM pool"),
-           "below_cutoff_if_one_batch": {}}
+    cutoffs = sorted({40, 100, top_k})
+    out = {"status": "ok", "positives": len(pos), "top_k": top_k, "cutoffs": cutoffs,
+           "pool": lab.scalar("SELECT COUNT(*) FROM pool"), "below_cutoff_if_one_batch": {}}
     lost = []
     for m in ("tfidf", "emb:bge-small", "emb:minilm"):
         if m not in scores:
             continue
         ranked = sorted(scores[m], key=lambda k: -scores[m][k])
         rank = {k: i + 1 for i, k in enumerate(ranked)}
-        below = [p for p in pos if rank.get(p["job_key"], 10**9) > top_k]
-        out["below_cutoff_if_one_batch"][m] = len(below)
+        out["below_cutoff_if_one_batch"][m] = {k: sum(rank.get(p["job_key"], 10**9) > k for p in pos)
+                                               for k in cutoffs}
         if m == "tfidf":
-            lost = [dict(p, rank=rank.get(p["job_key"])) for p in below]
+            lost = [dict(p, rank=rank.get(p["job_key"])) for p in pos if rank.get(p["job_key"], 10**9) > top_k]
     if main is not None:
-        scored = {(r["source"], r["source_id"]) for r in
-                  main.query("SELECT j.source, j.source_id FROM scores s JOIN jobs j USING (key)")}
-        out["reached_claude_in_daily_runs"] = sum((p["source"], p["source_id"]) in scored for p in pos)
+        # The daily run is a queue: each run scores the best unscored open postings and the rest
+        # wait. A positive is lost only if its posting closes before its turn.
+        latest = main.scalar("SELECT max(last_seen) FROM jobs WHERE source != 'manual'")
+        rows = {(r["source"], r["source_id"]): r for r in main.query(
+            "SELECT j.source, j.source_id, j.last_seen, s.key IS NOT NULL AS scored "
+            "FROM jobs j LEFT JOIN scores s USING (key)")}
+        cut = (datetime.fromisoformat(latest) - timedelta(days=2)).isoformat() if latest else ""
+        got = [rows.get((p["source"], p["source_id"])) for p in pos]
+        out["reached_claude_in_daily_runs"] = sum(bool(g and g["scored"]) for g in got)
+        out["closed_before_scored"] = sum(bool(g and not g["scored"] and g["last_seen"] < cut) for g in got)
+        out["waiting"] = sum(bool(g and not g["scored"] and g["last_seen"] >= cut) for g in got)
     return out, lost
 
 
@@ -377,18 +399,31 @@ def build(cfg: dict, lab: DB, main: DB | None, out_dir: Path, private_path: Path
         L += ["", f"Weighted estimate of the share of all filtered postings you'd apply to: "
               f"{s0['weighted_apply_share_of_filtered']:.1%} (set b is stratified by rule, so each label is "
               "weighted by its rule's size)."]
+        if s0.get("chance_if_as_good_as_kept") is not None:
+            L += ["", f"This sample has little power. If filtered postings were as good as the ones stage 0 keeps "
+                  f"({s0['apply_rate_kept']:.1%} apply in set a), "
+                  + (f"no apply labels in {s0['labeled']}" if not s0["apply"]
+                     else f"{s0['apply']} or fewer apply labels in {s0['labeled']}")
+                  + f" would still happen {s0['chance_if_as_good_as_kept']:.0%} of the time. The labels "
+                  f"are consistent with up to {s0['apply_rate_upper_95']:.1%} of filtered postings being worth "
+                  "applying to (one-sided 95%, exact binomial, unweighted): no loss detected, not no loss."]
     else:
         L.append("Pending: set b not labeled yet.")
     L += ["", "## Top-k audit", ""]
     if tk["status"] == "ok":
+        cuts = tk["cutoffs"]
         L += [f"{tk['positives']} apply labels in set a. With the whole pool of {tk['pool']} as one batch, "
-              f"positives ranked below the top {top_k} (they would never reach Claude):", ""]
-        for m, n in tk["below_cutoff_if_one_batch"].items():
-            L.append(f"- {_name(m)}: {n} of {tk['positives']}")
+              "positives ranked below each cutoff (in one run they would not reach Claude):", "",
+              "| Recall ranker | " + " | ".join(f"Below top {k}" for k in cuts) + " |",
+              "|---|" + "---|" * len(cuts)]
+        for m, by in tk["below_cutoff_if_one_batch"].items():
+            L.append(f"| {_name(m)} | " + " | ".join(f"{by[k]} of {tk['positives']}" for k in cuts) + " |")
         if "reached_claude_in_daily_runs" in tk:
-            L += ["", f"In the actual daily runs so far, {tk['reached_claude_in_daily_runs']} of {tk['positives']} "
-                  "apply-labeled postings were sent to Claude (daily runs see only that day's unscored postings, "
-                  "so this depends on timing as well as rank)."]
+            L += ["", "The daily run is a queue rather than one batch: each run scores the best unscored open "
+                  "postings, up to the cap, and the rest wait for later runs. A posting is missed only if it closes "
+                  f"first. So far {tk['reached_claude_in_daily_runs']} of {tk['positives']} apply-labeled postings "
+                  f"have been scored by Claude, {tk['closed_before_scored']} closed before their turn, and "
+                  f"{tk['waiting']} are still waiting."]
     else:
         L.append(f"Pending: {tk['reason']}.")
     L += ["", "## Ranker agreement (no labels needed)", ""]

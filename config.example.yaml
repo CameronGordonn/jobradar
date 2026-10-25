@@ -54,3 +54,10 @@ tracker:
   referrals:
     "Example Corp": "Pat Lee (engineering manager)"
   # weekly_goal: 10    # applications per week, shown on the Stats tab
+
+# Optional: pin what the evaluation ran with, so changing the production resumes or rubric later
+# doesn't change what rerunning eval-embed measures. Defaults to the production ones.
+# eval:
+#   resumes:
+#     ml_cv: resumes/ml_cv_2026-10.txt
+#   rubric_path: data/rubric_eval.md

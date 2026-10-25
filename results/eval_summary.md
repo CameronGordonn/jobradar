@@ -26,6 +26,8 @@ n = 200 labeled postings, 12 positive, 2000 bootstrap resamples.
 | TF-IDF (current stage 1) | 0.670 [0.547, 0.796] | 0.132 [0.054, 0.348] | 0.200 [0.000, 0.500] | 0.100 [0.000, 0.250] |
 | Embeddings, bge-small-en-v1.5 | 0.676 [0.515, 0.821] | 0.124 [0.056, 0.299] | 0.200 [0.000, 0.400] | 0.150 [0.000, 0.300] |
 | Embeddings, all-MiniLM-L6-v2 | 0.735 [0.588, 0.861] | 0.158 [0.066, 0.372] | 0.200 [0.000, 0.500] | 0.200 [0.050, 0.400] |
+| TF-IDF refit, resumes + rubric candidate section (control) | 0.677 [0.541, 0.813] | 0.140 [0.058, 0.372] | 0.200 [0.000, 0.500] | 0.150 [0.000, 0.300] |
+| Embeddings, bge-small, resumes + rubric candidate section (control) | 0.658 [0.491, 0.811] | 0.120 [0.053, 0.295] | 0.200 [0.000, 0.400] | 0.150 [0.000, 0.300] |
 | Claude Haiku 4.5 rerank | 0.961 [0.922, 0.987] | 0.679 [0.427, 0.878] | 0.700 [0.300, 1.000] | 0.409 [0.189, 0.664] |
 | Claude Sonnet 5.5 rerank | 0.916 [0.820, 0.987] | 0.674 [0.403, 0.908] | 0.727 [0.300, 1.000] | 0.407 [0.162, 0.679] |
 | Claude Haiku 5.5 rerank | 0.920 [0.785, 0.985] | 0.565 [0.297, 0.789] | 0.611 [0.286, 0.880] | 0.430 [0.215, 0.657] |
@@ -36,6 +38,8 @@ Paired difference against TF-IDF on the same resamples (95% CI):
 |---|---|---|
 | Embeddings, bge-small-en-v1.5 | +0.005 [-0.182, +0.194] | +0.000 [-0.400, +0.300] |
 | Embeddings, all-MiniLM-L6-v2 | +0.065 [-0.097, +0.208] | +0.000 [-0.400, +0.400] |
+| TF-IDF refit, resumes + rubric candidate section (control) | +0.007 [-0.043, +0.090] | +0.000 [+0.000, +0.000] |
+| Embeddings, bge-small, resumes + rubric candidate section (control) | -0.012 [-0.205, +0.182] | +0.000 [-0.400, +0.300] |
 | Claude Haiku 4.5 rerank | +0.290 [+0.177, +0.398] | +0.500 [+0.160, +0.800] |
 | Claude Sonnet 5.5 rerank | +0.246 [+0.114, +0.382] | +0.527 [+0.200, +0.900] |
 | Claude Haiku 5.5 rerank | +0.250 [+0.079, +0.402] | +0.411 [+0.032, +0.730] |
@@ -49,6 +53,8 @@ n = 200 labeled postings, 34 positive, 2000 bootstrap resamples.
 | TF-IDF (current stage 1) | 0.731 [0.643, 0.817] | 0.412 [0.274, 0.569] | 0.700 [0.298, 0.900] | 0.400 [0.200, 0.650] |
 | Embeddings, bge-small-en-v1.5 | 0.709 [0.616, 0.796] | 0.356 [0.235, 0.522] | 0.500 [0.200, 0.800] | 0.450 [0.250, 0.650] |
 | Embeddings, all-MiniLM-L6-v2 | 0.725 [0.631, 0.811] | 0.435 [0.283, 0.596] | 0.700 [0.300, 1.000] | 0.450 [0.250, 0.701] |
+| TF-IDF refit, resumes + rubric candidate section (control) | 0.745 [0.660, 0.827] | 0.424 [0.284, 0.581] | 0.700 [0.300, 0.900] | 0.400 [0.200, 0.650] |
+| Embeddings, bge-small, resumes + rubric candidate section (control) | 0.689 [0.589, 0.781] | 0.343 [0.222, 0.510] | 0.500 [0.100, 0.800] | 0.450 [0.200, 0.650] |
 | Claude Haiku 4.5 rerank | 0.880 [0.804, 0.941] | 0.646 [0.497, 0.781] | 0.900 [0.600, 1.000] | 0.727 [0.523, 0.911] |
 | Claude Sonnet 5.5 rerank | 0.843 [0.772, 0.904] | 0.548 [0.403, 0.685] | 0.836 [0.533, 1.000] | 0.638 [0.412, 0.850] |
 | Claude Haiku 5.5 rerank | 0.827 [0.751, 0.891] | 0.525 [0.377, 0.668] | 0.844 [0.573, 1.000] | 0.660 [0.450, 0.862] |
@@ -59,19 +65,21 @@ Paired difference against TF-IDF on the same resamples (95% CI):
 |---|---|---|
 | Embeddings, bge-small-en-v1.5 | -0.022 [-0.121, +0.080] | -0.200 [-0.600, +0.300] |
 | Embeddings, all-MiniLM-L6-v2 | -0.006 [-0.114, +0.101] | +0.000 [-0.400, +0.500] |
+| TF-IDF refit, resumes + rubric candidate section (control) | +0.015 [-0.024, +0.064] | +0.000 [+0.000, +0.000] |
+| Embeddings, bge-small, resumes + rubric candidate section (control) | -0.042 [-0.142, +0.063] | -0.200 [-0.600, +0.300] |
 | Claude Haiku 4.5 rerank | +0.149 [+0.052, +0.246] | +0.200 [-0.114, +0.600] |
 | Claude Sonnet 5.5 rerank | +0.112 [+0.020, +0.206] | +0.136 [-0.167, +0.575] |
 | Claude Haiku 5.5 rerank | +0.096 [+0.003, +0.186] | +0.144 [-0.169, +0.542] |
 
 ## Cost per daily run
 
-One daily run sends the top 40 postings by recall to Claude, one call each, at standard prices. Computed from token counts measured on the eval calls.
+One daily run sends the top 100 postings by recall to Claude, one call each, at standard prices. Computed from token counts measured on the eval calls.
 
 | Model | Calls measured | Mean input tokens | Mean output tokens | System prompt caches? | USD per run |
 |---|---|---|---|---|---|
-| claude-haiku-4-5-20251001 | 221 | 7382 | 350 | yes (5118 tokens, minimum 4096) | $0.187 |
-| claude-haiku-5-5 | 250 | 10005 | 1283 | yes (7237 tokens, minimum 512) | $0.040 |
-| claude-sonnet-5-5 | 250 | 10005 | 652 | yes (7237 tokens, minimum 512) | $0.557 |
+| claude-haiku-4-5-20251001 | 221 | 7382 | 350 | yes (5118 tokens, minimum 4096) | $0.458 |
+| claude-haiku-5-5 | 250 | 10005 | 1283 | yes (7237 tokens, minimum 512) | $0.100 |
+| claude-sonnet-5-5 | 250 | 10005 | 652 | yes (7237 tokens, minimum 512) | $1.367 |
 
 ## LLM stability
 
@@ -98,15 +106,19 @@ The rerank is pointwise (one posting per call), so stability is measured by scor
 
 Weighted estimate of the share of all filtered postings you'd apply to: 0.0% (set b is stratified by rule, so each label is weighted by its rule's size).
 
+This sample has little power. If filtered postings were as good as the ones stage 0 keeps (6.0% apply in set a), no apply labels in 30 would still happen 16% of the time. The labels are consistent with up to 9.5% of filtered postings being worth applying to (one-sided 95%, exact binomial, unweighted): no loss detected, not no loss.
+
 ## Top-k audit
 
-12 apply labels in set a. With the whole pool of 551 as one batch, positives ranked below the top 40 (they would never reach Claude):
+12 apply labels in set a. With the whole pool of 551 as one batch, positives ranked below each cutoff (in one run they would not reach Claude):
 
-- TF-IDF (current stage 1): 10 of 12
-- Embeddings, bge-small-en-v1.5: 10 of 12
-- Embeddings, all-MiniLM-L6-v2: 8 of 12
+| Recall ranker | Below top 40 | Below top 100 |
+|---|---|---|
+| TF-IDF (current stage 1) | 10 of 12 | 9 of 12 |
+| Embeddings, bge-small-en-v1.5 | 10 of 12 | 8 of 12 |
+| Embeddings, all-MiniLM-L6-v2 | 8 of 12 | 6 of 12 |
 
-In the actual daily runs so far, 5 of 12 apply-labeled postings were sent to Claude (daily runs see only that day's unscored postings, so this depends on timing as well as rank).
+The daily run is a queue rather than one batch: each run scores the best unscored open postings, up to the cap, and the rest wait for later runs. A posting is missed only if it closes first. So far 10 of 12 apply-labeled postings have been scored by Claude, 2 closed before their turn, and 0 are still waiting.
 
 ## Ranker agreement (no labels needed)
 
@@ -116,25 +128,38 @@ Spearman correlation of the scores each ranker gives the same 200 set a postings
 |---|---|
 | TF-IDF (current stage 1) vs Embeddings, bge-small-en-v1.5 | 0.596 |
 | TF-IDF (current stage 1) vs Embeddings, all-MiniLM-L6-v2 | 0.431 |
+| TF-IDF (current stage 1) vs TF-IDF refit, resumes + rubric candidate section (control) | 0.910 |
+| TF-IDF (current stage 1) vs Embeddings, bge-small, resumes + rubric candidate section (control) | 0.562 |
 | TF-IDF (current stage 1) vs Claude Haiku 4.5 rerank | 0.479 |
 | TF-IDF (current stage 1) vs Claude Sonnet 5.5 rerank | 0.272 |
 | TF-IDF (current stage 1) vs Claude Haiku 5.5 rerank | 0.401 |
 | Embeddings, bge-small-en-v1.5 vs Embeddings, all-MiniLM-L6-v2 | 0.698 |
+| Embeddings, bge-small-en-v1.5 vs TF-IDF refit, resumes + rubric candidate section (control) | 0.529 |
+| Embeddings, bge-small-en-v1.5 vs Embeddings, bge-small, resumes + rubric candidate section (control) | 0.930 |
 | Embeddings, bge-small-en-v1.5 vs Claude Haiku 4.5 rerank | 0.439 |
 | Embeddings, bge-small-en-v1.5 vs Claude Sonnet 5.5 rerank | 0.172 |
 | Embeddings, bge-small-en-v1.5 vs Claude Haiku 5.5 rerank | 0.434 |
+| Embeddings, all-MiniLM-L6-v2 vs TF-IDF refit, resumes + rubric candidate section (control) | 0.422 |
+| Embeddings, all-MiniLM-L6-v2 vs Embeddings, bge-small, resumes + rubric candidate section (control) | 0.629 |
 | Embeddings, all-MiniLM-L6-v2 vs Claude Haiku 4.5 rerank | 0.363 |
 | Embeddings, all-MiniLM-L6-v2 vs Claude Sonnet 5.5 rerank | 0.167 |
 | Embeddings, all-MiniLM-L6-v2 vs Claude Haiku 5.5 rerank | 0.320 |
+| TF-IDF refit, resumes + rubric candidate section (control) vs Embeddings, bge-small, resumes + rubric candidate section (control) | 0.536 |
+| TF-IDF refit, resumes + rubric candidate section (control) vs Claude Haiku 4.5 rerank | 0.453 |
+| TF-IDF refit, resumes + rubric candidate section (control) vs Claude Sonnet 5.5 rerank | 0.319 |
+| TF-IDF refit, resumes + rubric candidate section (control) vs Claude Haiku 5.5 rerank | 0.388 |
+| Embeddings, bge-small, resumes + rubric candidate section (control) vs Claude Haiku 4.5 rerank | 0.402 |
+| Embeddings, bge-small, resumes + rubric candidate section (control) vs Claude Sonnet 5.5 rerank | 0.188 |
+| Embeddings, bge-small, resumes + rubric candidate section (control) vs Claude Haiku 5.5 rerank | 0.436 |
 | Claude Haiku 4.5 rerank vs Claude Sonnet 5.5 rerank | 0.735 |
 | Claude Haiku 4.5 rerank vs Claude Haiku 5.5 rerank | 0.731 |
 | Claude Sonnet 5.5 rerank vs Claude Haiku 5.5 rerank | 0.721 |
 
-Postings each Claude model recommends "apply" that a recall ranker puts below its top 40 across the whole pool of 551 (in a single batch they would never reach Claude):
+Postings each Claude model recommends "apply" that a recall ranker puts below its top 100 across the whole pool of 551 (in a single batch they would never reach Claude):
 
 | Model | Scored | Apply | Below TF-IDF top-k | Below bge-small top-k | Below MiniLM top-k |
 |---|---|---|---|---|---|
-| claude-haiku-4-5-20251001 | 200 | 5 | 3 | 5 | 3 |
+| claude-haiku-4-5-20251001 | 200 | 5 | 3 | 4 | 2 |
 | claude-haiku-5-5 | 200 | 2 | 1 | 2 | 2 |
 | claude-sonnet-5-5 | 200 | 1 | 0 | 1 | 1 |
 
