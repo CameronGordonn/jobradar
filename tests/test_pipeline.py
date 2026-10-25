@@ -122,6 +122,7 @@ def test_non_us_remote_blocked(cfg):
     assert loc("Remote - US") is None
     assert loc("San Francisco, CA | London, UK") is None   # has a concrete US location
     assert loc("Remote") is None
+    assert loc(None) == "location"   # {"name": null} from Greenhouse: no location, not a crash
 
 
 def test_years_regex():

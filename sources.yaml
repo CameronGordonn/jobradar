@@ -46,6 +46,12 @@ sources:
       - {token: lunarenergy, name: "Lunar Energy"}      # home batteries
       - {token: energyhub, name: "EnergyHub"}           # distributed energy management
       - {token: relae, name: "Relae (formerly Pachama)"}  # energy and climate advisory, carbon project review
+      # Found through climate VC portfolio boards (Elemental, Prelude, EIP, Clean Energy Ventures, Overture), Oct 2026
+      - {token: mill, name: "Mill"}                     # household food waste
+      - {token: eh2, name: "Electric Hydrogen"}         # green hydrogen electrolyzers
+      - {token: placerlabs, name: "Placer.ai"}          # location analytics
+      - {token: sparkfund, name: "Sparkfund"}           # energy efficiency financing
+      - {token: ampsortation, name: "AMP"}              # CV-guided recycling robots
       # Sports analytics
       - {token: hudl, name: "Hudl"}
       - {token: geniussports, name: "Genius Sports"}
@@ -61,6 +67,8 @@ sources:
     boards:
       - {token: voltus, name: "Voltus"}            # demand response / grid flexibility
       - {token: arcadia, name: "Arcadia"}          # utility data, community solar
+      - {token: bedrockenergy, name: "Bedrock Energy"}  # geothermal heating and cooling
+      - {token: arable, name: "Arable"}            # in-field crop and weather sensing
       - {token: gridware, name: "Gridware"}        # grid sensing, wildfire risk on power lines
       - {token: jupiterintel, name: "Jupiter Intelligence"}  # climate risk analytics
       - {token: zoox, name: "Zoox"}                # autonomous vehicles
@@ -88,6 +96,15 @@ sources:
       - {token: weave-grid, name: "WeaveGrid"}       # EV charging and the grid
       - {token: element84, name: "Element 84"}       # geospatial and earth observation software
       - {token: firststreet, name: "First Street"}   # climate risk models
+      # Found through climate VC portfolio boards, Oct 2026
+      - {token: civilgrid, name: "CivilGrid"}        # utility and right-of-way GIS
+      - {token: cruxclimate, name: "Crux"}           # clean energy tax credit market
+      - {token: blumen, name: "Blumen"}              # environmental planning and permitting
+      - {token: heirloomcarbon, name: "Heirloom"}    # direct air capture
+      - {token: vaulted-deep, name: "Vaulted Deep"}  # carbon removal by deep injection
+      - {token: emerald-ai, name: "Emerald AI"}      # data center flexibility for the grid
+      - {token: heron-power, name: "Heron Power"}    # solid-state transformers for the grid
+      - {token: rhoda-ai, name: "Rhoda AI"}          # robot learning from video
 
 # Near-duplicate collapse in the marts (python -m jobradar.pipeline dedupe).
 dedupe:
