@@ -24,7 +24,7 @@ def parse_job(j: dict, token: str, display_name: str | None) -> Job:
         source_id=f"{token}:{j['id']}",
         title=j.get("title", ""),
         org=display_name or j.get("company_name") or token,
-        location=(j.get("location") or {}).get("name", ""),
+        location=(j.get("location") or {}).get("name") or "",  # Greenhouse sends {"name": null} at times
         url=j.get("absolute_url", ""),
         description=html_to_text(j.get("content", "")),
         posted=j.get("first_published") or j.get("updated_at"),
