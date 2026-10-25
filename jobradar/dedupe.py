@@ -1,5 +1,12 @@
-"""Near-duplicate postings: embedding similarity on "title | company | location", compared
-only within a company (postings at different companies are different jobs).
+"""Near-duplicate postings, compared only within a company (postings at different companies are
+different jobs). Two rules, picked in sources.yaml (dedupe.rule):
+
+- company_title (in use): same company and title, any location. A cluster is one role listed
+  for several cities.
+- embedding: similarity of "title | company | location" at a threshold from hand marks. The
+  marks rejected it here (see results/dedupe_eval.json); kept for comparison.
+
+Embedding steps:
 
 1. candidates: 50 same-company pairs spanning the similarity range, stratified by bin
 2. mark: label each pair same / different, blind to the similarity score
@@ -10,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import random
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -167,6 +175,43 @@ def cluster(jobs: list[dict], E: np.ndarray, threshold: float) -> dict[str, str]
     for a, b, _ in company_pairs(jobs, E, threshold):
         union(a, b)
     return {j["job_id"]: jobs[find(i)]["job_id"] for i, j in enumerate(jobs)}
+
+
+def title_key(company: str, title: str) -> str:
+    """Same company and title, ignoring case, punctuation and "&" vs "and"."""
+    norm = lambda x: re.sub(r"[^a-z0-9]+", " ", (x or "").lower().replace("&", " and ")).strip()  # noqa: E731
+    return f"{norm(company)}|{norm(title)}"
+
+
+def cluster_by_title(jobs: list[dict]) -> dict[str, str]:
+    """rule: company_title. One cluster per company + title, wherever it's listed: the hand marks
+    showed a "duplicate" here is the same role posted for several cities. Exact matches are a
+    subset, so they still collapse."""
+    first = {}
+    for j in jobs:
+        first.setdefault(title_key(j["company"], j["title"]), j["job_id"])
+    return {j["job_id"]: first[title_key(j["company"], j["title"])] for j in jobs}
+
+
+def evaluate_title_rule(rows: list[dict]) -> dict:
+    """Precision and recall of the company_title rule over marked pairs (any file of them), plus a
+    one-sided 95% lower bound on precision (exact binomial)."""
+    from scipy.stats import beta
+
+    marked = [r for r in rows if r["same"] in ("y", "n")]
+    tp = fp = fn = tn = 0
+    for r in marked:
+        pred = title_key(r["company"], r["title_a"]) == title_key(r["company"], r["title_b"])
+        y = r["same"] == "y"
+        tp += pred and y
+        fp += pred and not y
+        fn += (not pred) and y
+        tn += (not pred) and not y
+    n_pred = tp + fp
+    return {"marked": len(marked), "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+            "precision": tp / n_pred if n_pred else None,
+            "precision_lower_95": float(beta.ppf(0.05, tp, fp + 1)) if tp else None,
+            "recall": tp / (tp + fn) if tp + fn else None}
 
 
 def collapsed_share(mapping: dict[str, str]) -> float:
