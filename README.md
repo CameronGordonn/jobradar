@@ -29,7 +29,7 @@ A job-search pipeline I built with Claude Code and run every morning in my own s
 | How are duplicate postings handled? | An embedding-similarity threshold failed its pre-set acceptance rule, catching 3 of 16 marked duplicates. A same-company, same-title rule then matched 30 of 30 fresh hand-checked pairs and collapses 19% of open postings. Those marks were made from titles and locations, and the descriptions of some merged pairs differ (several are translations), so a few merges may join different teams. The rule affects dashboard counts only; ranking and the tracker treat postings as duplicates only with the same company, title, and location. |
 | What did the evaluation cost? | $2.30 in API calls. |
 
-The engineering lesson so far: the losses came from operations (no scheduled run for three weeks, then a backlog cap), not from the ranking model. The main caveats: one person labeled everything, two thirds of the labeled postings come from five large employers, and the relabeling round that measures my own consistency opens Oct 31.
+The engineering lesson so far: the losses came from operations (no scheduled run for three weeks, then a backlog cap), not from the ranking model. The main caveats: one person labeled everything, quickly (a median 5 seconds per label, from an excerpt), two thirds of the labeled postings come from five large employers, and the relabeling round that measures my own consistency opens Oct 31.
 
 **Stack:** Python, SQL, DuckDB, dbt, GitHub Actions, GitHub Pages, Claude API (Anthropic SDK), scikit-learn, sentence-transformers, and pytest.
 
@@ -154,6 +154,7 @@ To build the warehouse locally: `pip install -r requirements-pipeline.txt`, then
 - TF-IDF weights shift as the corpus grows, so recall scores aren't comparable across weeks. The eval uses scores frozen when the label sets were drawn.
 - Both embedding models truncate long postings (512 and 256 tokens).
 - One labeler. The eval measures how well the rankers match one person's judgment, bounded by that person's consistency.
+- Fast labels. Timed between saves, with two breaks of 11 and 37 minutes left out, the median label took 5 seconds: 4 for a no (194 of 230), 16 for a maybe, and 23 for an apply. The screen shows an excerpt, a median 2,254 characters of a 6,715-character posting. The full text is one key away, but whether it was opened isn't logged.
 
 ## License
 
