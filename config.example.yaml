@@ -10,7 +10,12 @@ resumes:
 
 filters:
   # Matched as whole words, case-insensitive. Only the title is checked.
-  exclude_title: [senior, sr, staff, principal, director, manager, head, vp, "vice president", lead, intern, internship]
+  exclude_title: [senior, sr, staff, principal, director, manager, head, vp, "vice president", lead, intern, internship,
+                  # Non-technical sales. Named titles, not "sales", so Sales/Solutions Engineer and
+                  # Solutions Architect stay in (of 37 labeled 2026-10-24: 36 no, 1 maybe).
+                  "account executive", "account development representative", "sales development representative",
+                  "business development representative", sdr, bdr, seller, "sales leader", "sales representative",
+                  "sales associate"]
   # Whole-word match against location. Add your state and city. "United States" keeps remote-US postings.
   location_allow: [Remote, Anywhere, "United States", USA]
   # Whole-word. Drops "Remote - Canada" style postings unless a concrete allowed location is also listed.
